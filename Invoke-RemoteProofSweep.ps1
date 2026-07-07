@@ -1,0 +1,443 @@
+param(
+    [string]$ComputerName = "192.168.200.132",
+
+    [pscredential]$Credential,
+
+    [string]$RemoteDirectory = "C:\CVELAB\final",
+
+    [int[]]$SprayCounts = @(2000, 10000),
+
+    [ValidateRange(1, 1000)]
+    [int]$RepeatsPerSpray = 3,
+
+    [ValidateRange(1, 1440)]
+    [int]$ObserveMinutes = 10,
+
+    [ValidateSet("fast","deep","allocdiag")]
+    [string]$ObserveMode = "allocdiag",
+
+    [ValidateRange(0, 10000)]
+    [int]$PostPayloadAllocTraceCount = 100,
+
+    [ValidateRange(0, 1000)]
+    [int]$PostPayloadAllocStackCount = 5,
+
+    [ValidateRange(0, 3600)]
+    [int]$DelayBetweenRunsSeconds = 20,
+
+    [string]$LocalResultDirectory = ".\remote-results",
+
+    [switch]$SkipCopy,
+
+    [switch]$StopOnExactReuse
+)
+
+$ErrorActionPreference = "Stop"
+
+if ($null -eq $Credential) {
+    $Credential = Get-Credential -Message "Credential for $ComputerName"
+}
+
+$projectDirectory = $PSScriptRoot
+if (-not $projectDirectory) {
+    $projectDirectory = (Get-Location).ProviderPath
+}
+
+$localResultPath = New-Item -ItemType Directory -Path $LocalResultDirectory -Force
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$localRunDirectory = New-Item -ItemType Directory -Path (Join-Path $localResultPath.FullName "remote-proof-$stamp") -Force
+$localReportPath = Join-Path $localRunDirectory.FullName "remote-proof-report.csv"
+$localEventsPath = Join-Path $localRunDirectory.FullName "remote-proof-events.log"
+$localStatePath = Join-Path $localRunDirectory.FullName "remote-proof-state.xml"
+
+function Copy-ProofScripts {
+    param(
+        [System.Management.Automation.Runspaces.PSSession]$Session,
+        [string]$DestinationDirectory
+    )
+
+    Invoke-Command -Session $Session -ScriptBlock {
+        param([string]$Directory)
+        New-Item -ItemType Directory -Force $Directory | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "tests") | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "tools\preview") | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "tools\frida") | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "tools\maintenance") | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "docs\superpowers\plans") | Out-Null
+    } -ArgumentList $DestinationDirectory
+
+    foreach ($relativePath in @(
+        "AGENTS.md",
+        "run-proof.ps1",
+        "tools\preview\Invoke-PreviewTrigger.ps1",
+        "tools\preview\trigger-preview.ps1",
+        "tools\frida\Start-FridaPreviewRun.ps1",
+        "tools\frida\frida-placement.js",
+        "tools\maintenance\clean-proof-state.ps1",
+        "tests\RunProof.Static.Tests.ps1",
+        "tests\RemoteProofSweep.Static.Tests.ps1",
+        "docs\superpowers\plans\2026-07-06-next-proof-steps.md"
+    )) {
+        $sourcePath = Join-Path $projectDirectory $relativePath
+        $destinationPath = Join-Path $DestinationDirectory $relativePath
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -ToSession $Session -Force
+    }
+}
+
+function Invoke-RemoteAttempt {
+    param(
+        [System.Management.Automation.Runspaces.PSSession]$Session,
+        [int]$SprayCount,
+        [int]$RunIndex
+    )
+
+    Invoke-Command -Session $Session -ScriptBlock {
+        param(
+            [string]$Directory,
+            [int]$RemoteSprayCount,
+            [string]$RemoteObserveMode,
+            [int]$RemoteObserveMinutes,
+            [int]$RemotePostPayloadAllocTraceCount,
+            [int]$RemotePostPayloadAllocStackCount,
+            [int]$RemoteRunIndex
+        )
+
+        $runStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $taskName = "ProofRemote-$RemoteRunIndex-$runStamp"
+        $runnerPath = Join-Path $Directory "scripts\proof-remote-run-$RemoteRunIndex-$runStamp.ps1"
+        $donePath = Join-Path $Directory "scripts\proof-remote-done-$RemoteRunIndex-$runStamp.flag"
+        $outputPath = Join-Path $Directory "results\proof-remote-run-$RemoteRunIndex-$runStamp.out.log"
+        $errorPath = Join-Path $Directory "results\proof-remote-run-$RemoteRunIndex-$runStamp.err.log"
+        $runSummaryPath = Join-Path $Directory "results\attempt-summary-remote-$RemoteRunIndex-$runStamp.csv"
+        $runRankingPath = Join-Path $Directory "results\attempt-ranking-remote-$RemoteRunIndex-$runStamp.csv"
+        $remoteFailureDiagnosticsPath = Join-Path $Directory "results\proof-remote-run-$RemoteRunIndex-$runStamp.diagnostics.log"
+
+        function Write-RemoteFailureDiagnostics {
+            param(
+                [string]$TaskName,
+                [string]$OutputPath,
+                [string]$ErrorPath,
+                [string]$DiagnosticsPath
+            )
+
+            $lines = New-Object System.Collections.Generic.List[string]
+            [void]$lines.Add("=== REMOTE FAILURE DIAGNOSTICS ===")
+            [void]$lines.Add(("Timestamp={0:o}" -f (Get-Date)))
+            [void]$lines.Add("TaskName=$TaskName")
+            [void]$lines.Add("OutputPath=$OutputPath Exists=$(Test-Path -LiteralPath $OutputPath)")
+            [void]$lines.Add("ErrorPath=$ErrorPath Exists=$(Test-Path -LiteralPath $ErrorPath)")
+
+            try {
+                $taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+                [void]$lines.Add(("TaskLastRunTime={0:o}" -f $taskInfo.LastRunTime))
+                [void]$lines.Add("TaskLastTaskResult=$($taskInfo.LastTaskResult)")
+            } catch {
+                [void]$lines.Add("TaskInfoError=$($_.Exception.Message)")
+            }
+
+            [void]$lines.Add("=== TASK SCHEDULER EVENTS ===")
+            try {
+                $taskEvents = Get-WinEvent -FilterHashtable @{ LogName = "Microsoft-Windows-TaskScheduler/Operational"; StartTime = (Get-Date).AddHours(-4) } -ErrorAction Stop |
+                    Where-Object { $_.Message -like "*$TaskName*" } |
+                    Select-Object -First 40
+                foreach ($event in $taskEvents) {
+                    [void]$lines.Add(("[{0:o}] Id={1} Level={2} {3}" -f $event.TimeCreated, $event.Id, $event.LevelDisplayName, ($event.Message -replace "`r?`n", " ")))
+                }
+            } catch {
+                [void]$lines.Add("TaskSchedulerEventError=$($_.Exception.Message)")
+            }
+
+            [void]$lines.Add("=== APPLICATION CRASH EVENTS ===")
+            try {
+                $applicationEvents = Get-WinEvent -FilterHashtable @{ LogName = "Application"; StartTime = (Get-Date).AddHours(-4) } -ErrorAction Stop |
+                    Where-Object { $_.ProviderName -match "Application Error|Windows Error Reporting" -and $_.Message -match "powershell|WINWORD|cdb" } |
+                    Select-Object -First 20
+                foreach ($event in $applicationEvents) {
+                    [void]$lines.Add(("[{0:o}] Provider={1} Id={2} {3}" -f $event.TimeCreated, $event.ProviderName, $event.Id, ($event.Message -replace "`r?`n", " ")))
+                }
+            } catch {
+                [void]$lines.Add("ApplicationEventError=$($_.Exception.Message)")
+            }
+
+            $lines | Set-Content -LiteralPath $DiagnosticsPath -Encoding UTF8
+        }
+
+        function New-RemoteTaskFailureResult {
+            param(
+                [string]$TaskName,
+                [object]$TaskInfo,
+                [datetime]$StartedAt,
+                [string]$OutputPath,
+                [string]$ErrorPath,
+                [string]$DiagnosticsPath
+            )
+
+            $taskResultText = if ($TaskInfo) { $TaskInfo.LastTaskResult } else { "" }
+
+            [pscustomobject]@{
+                Timestamp                      = Get-Date -Format o
+                RunIndex                       = $RemoteRunIndex
+                SprayCount                     = $RemoteSprayCount
+                Status                         = "failed"
+                FailureKind                    = "scheduled-task"
+                HasBadCleanup                  = $false
+                HasPayloadRelease              = $false
+                HasExactReuseRuntime           = $false
+                HasWatchHit                    = $false
+                MarkerFound                    = $false
+                PostPayloadAlloc20Count        = 0
+                FirstPostPayloadAlloc20Delta   = ""
+                ClosestPostPayloadAlloc20Delta = ""
+                PostPayloadAllocSummary        = ""
+                BestPostPayloadAllocSize       = ""
+                BestPostPayloadAllocDelta      = ""
+                ClosestPositivePostPayloadAllocDelta = ""
+                ClosestNegativePostPayloadAllocDelta = ""
+                ClosestAbsolutePostPayloadAllocDelta = ""
+                PreviewInitializeHr            = ""
+                PreviewTriggerExitCode         = ""
+                PreviewTriggerHasExited        = ""
+                DurationSeconds                = [Math]::Round(((Get-Date) - $StartedAt).TotalSeconds, 3)
+                TaskLastTaskResult             = if ($TaskInfo) { $TaskInfo.LastTaskResult } else { "" }
+                TaskLastRunTime                = if ($TaskInfo) { $TaskInfo.LastRunTime } else { "" }
+                RemoteOutput                   = $OutputPath
+                RemoteError                    = $ErrorPath
+                RemoteFailureDiagnostics       = $DiagnosticsPath
+                CdbLog                         = ""
+                EventLines                     = @(
+                    "SCHEDULED_TASK_FAILURE task=$TaskName result=$taskResultText"
+                )
+            }
+        }
+
+        New-Item -ItemType Directory -Force (Join-Path $Directory "scripts") | Out-Null
+        New-Item -ItemType Directory -Force (Join-Path $Directory "results") | Out-Null
+        Remove-Item -LiteralPath $donePath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $runSummaryPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $runRankingPath -Force -ErrorAction SilentlyContinue
+
+        @"
+`$ErrorActionPreference = "Continue"
+try {
+    cd "$Directory"
+    .\tools\maintenance\clean-proof-state.ps1 *> "$outputPath"
+
+    & .\run-proof.ps1 ``
+        -Mode full ``
+        -TableCountsOverride @(2000) ``
+        -SprayCountsOverride @($RemoteSprayCount) ``
+        -MaxAttempts 1 ``
+        -StartFromAttempt 8 ``
+        -ObserveMode $RemoteObserveMode ``
+        -ObserveMinutes $RemoteObserveMinutes ``
+        -PostPayloadAllocTraceCount $RemotePostPayloadAllocTraceCount ``
+        -PostPayloadAllocStackCount $RemotePostPayloadAllocStackCount ``
+        -AttemptSummaryPath "$runSummaryPath" ``
+        -RankingPath "$runRankingPath" ``
+        -IUnderstandThisKillsWord ``
+        -KeepArtifactsOnFailure ``
+        -LogMemoryMetrics *>> "$outputPath"
+}
+catch {
+    `$_.Exception.ToString() | Set-Content -Path "$errorPath" -Encoding ASCII
+}
+finally {
+    "done" | Set-Content -Path "$donePath" -Encoding ASCII
+}
+"@ | Set-Content -Path $runnerPath -Encoding ASCII
+
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`""
+        $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 8)
+        Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+        $taskStartedAt = Get-Date
+        Start-ScheduledTask -TaskName $taskName
+
+        $deadline = (Get-Date).AddMinutes([Math]::Max(30, $RemoteObserveMinutes + 25))
+        while (-not (Test-Path $donePath)) {
+            $taskDuringWait = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            $taskInfoDuringWait = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+            if (
+                $taskDuringWait -and
+                $taskInfoDuringWait -and
+                $taskDuringWait.State -ne "Running" -and
+                $taskInfoDuringWait.LastRunTime -ge $taskStartedAt.AddSeconds(-5) -and
+                $taskInfoDuringWait.LastTaskResult -ne 0
+            ) {
+                Write-RemoteFailureDiagnostics -TaskName $taskName -OutputPath $outputPath -ErrorPath $errorPath -DiagnosticsPath $remoteFailureDiagnosticsPath
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                return New-RemoteTaskFailureResult -TaskName $taskName -TaskInfo $taskInfoDuringWait -StartedAt $taskStartedAt -OutputPath $outputPath -ErrorPath $errorPath -DiagnosticsPath $remoteFailureDiagnosticsPath
+            }
+
+            if ((Get-Date) -gt $deadline) {
+                Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                Write-RemoteFailureDiagnostics -TaskName $taskName -OutputPath $outputPath -ErrorPath $errorPath -DiagnosticsPath $remoteFailureDiagnosticsPath
+                $taskInfoOnTimeout = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                return New-RemoteTaskFailureResult -TaskName $taskName -TaskInfo $taskInfoOnTimeout -StartedAt $taskStartedAt -OutputPath $outputPath -ErrorPath $errorPath -DiagnosticsPath $remoteFailureDiagnosticsPath
+            }
+            Start-Sleep -Seconds 5
+        }
+
+        $taskInfoAfterRun = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+
+        $summaryPath = $runSummaryPath
+        $summaryRows = @()
+        if (Test-Path $summaryPath) {
+            $summaryRows = @(Import-Csv $summaryPath)
+        }
+
+        $lastRow = $summaryRows | Select-Object -Last 1
+        $lastLogPath = if ($lastRow -and $lastRow.LogPath -and (Test-Path $lastRow.LogPath)) {
+            $lastRow.LogPath
+        } elseif (-not $lastRow) {
+            $lastLog = Get-ChildItem (Join-Path $Directory "results\cdb-proof-*.log") -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+            if ($lastLog) { $lastLog.FullName } else { "" }
+        } else {
+            ""
+        }
+
+        $eventLines = @()
+        if ($lastLogPath) {
+            $eventLines = @(
+                Select-String -Path $lastLogPath -Pattern "CDB_POST_PAYLOAD_ALLOC_RETURN|CDB_POST_PAYLOAD_ALLOC20_RETURN|CDB_PAYLOAD_RELEASE_ENTER|CDB_PAYLOAD_RELEASE_STACK|CDB_PAYLOAD_AFTER|CDB_BAD_CLEANUP_RET|CDB_EXACT_REUSE_RUNTIME|CDB_WRITE_TO_REUSED_SLOT" |
+                    Select-Object -Last 300 |
+                    ForEach-Object { $_.Line }
+            )
+        }
+
+        [pscustomobject]@{
+            Timestamp                      = Get-Date -Format o
+            RunIndex                       = $RemoteRunIndex
+            SprayCount                     = $RemoteSprayCount
+            Status                         = if ($lastRow) { $lastRow.Status } else { "missing-summary" }
+            FailureKind                    = if ($lastRow) { $lastRow.FailureKind } else { "" }
+            HasBadCleanup                  = if ($lastRow) { $lastRow.HasBadCleanup } else { "" }
+            HasPayloadRelease              = if ($lastRow) { $lastRow.HasPayloadRelease } else { "" }
+            HasExactReuseRuntime           = if ($lastRow) { $lastRow.HasExactReuseRuntime } else { "" }
+            HasWatchHit                    = if ($lastRow) { $lastRow.HasWatchHit } else { "" }
+            MarkerFound                    = if ($lastRow) { $lastRow.MarkerFound } else { "" }
+            PostPayloadAlloc20Count        = if ($lastRow) { $lastRow.PostPayloadAlloc20Count } else { "" }
+            FirstPostPayloadAlloc20Delta   = if ($lastRow) { $lastRow.FirstPostPayloadAlloc20Delta } else { "" }
+            ClosestPostPayloadAlloc20Delta = if ($lastRow) { $lastRow.ClosestPostPayloadAlloc20Delta } else { "" }
+            PostPayloadAllocSummary        = if ($lastRow) { $lastRow.PostPayloadAllocSummary } else { "" }
+            BestPostPayloadAllocSize       = if ($lastRow) { $lastRow.BestPostPayloadAllocSize } else { "" }
+            BestPostPayloadAllocDelta      = if ($lastRow) { $lastRow.BestPostPayloadAllocDelta } else { "" }
+            ClosestPositivePostPayloadAllocDelta = if ($lastRow) { $lastRow.ClosestPositivePostPayloadAllocDelta } else { "" }
+            ClosestNegativePostPayloadAllocDelta = if ($lastRow) { $lastRow.ClosestNegativePostPayloadAllocDelta } else { "" }
+            ClosestAbsolutePostPayloadAllocDelta = if ($lastRow) { $lastRow.ClosestAbsolutePostPayloadAllocDelta } else { "" }
+            PreviewInitializeHr            = if ($lastRow) { $lastRow.PreviewInitializeHr } else { "" }
+            PreviewTriggerExitCode         = if ($lastRow) { $lastRow.PreviewTriggerExitCode } else { "" }
+            PreviewTriggerHasExited        = if ($lastRow) { $lastRow.PreviewTriggerHasExited } else { "" }
+            DurationSeconds                = if ($lastRow) { $lastRow.DurationSeconds } else { "" }
+            TaskLastTaskResult             = if ($taskInfoAfterRun) { $taskInfoAfterRun.LastTaskResult } else { "" }
+            TaskLastRunTime                = if ($taskInfoAfterRun) { $taskInfoAfterRun.LastRunTime } else { "" }
+            RemoteOutput                   = $outputPath
+            RemoteError                    = $errorPath
+            RemoteFailureDiagnostics       = $remoteFailureDiagnosticsPath
+            CdbLog                         = $lastLogPath
+            EventLines                     = $eventLines
+        }
+    } -ArgumentList $RemoteDirectory, $SprayCount, $ObserveMode, $ObserveMinutes, $PostPayloadAllocTraceCount, $PostPayloadAllocStackCount, $RunIndex
+}
+
+$session = $null
+$results = New-Object System.Collections.Generic.List[object]
+
+try {
+    $session = New-PSSession -ComputerName $ComputerName -Credential $Credential
+
+    if (-not $SkipCopy) {
+        Copy-ProofScripts -Session $session -DestinationDirectory $RemoteDirectory
+    }
+
+    Invoke-Command -Session $session -ScriptBlock {
+        param([string]$Directory)
+        cd $Directory
+        & .\tests\RunProof.Static.Tests.ps1
+        & .\tests\RemoteProofSweep.Static.Tests.ps1
+    } -ArgumentList $RemoteDirectory
+
+    $runIndex = 0
+    $shouldStopSweep = $false
+    foreach ($sprayCount in $SprayCounts) {
+        if ($shouldStopSweep) { break }
+        for ($repeat = 1; $repeat -le $RepeatsPerSpray; $repeat++) {
+            $runIndex++
+            Write-Host ("`n===== REMOTE RUN {0}: spray={1} repeat={2}/{3} =====" -f $runIndex, $sprayCount, $repeat, $RepeatsPerSpray) -ForegroundColor Cyan
+
+            $result = Invoke-RemoteAttempt -Session $session -SprayCount $sprayCount -RunIndex $runIndex
+            [void]$results.Add($result)
+
+            $flatResult = [pscustomobject]@{
+                Timestamp                      = $result.Timestamp
+                RunIndex                       = $result.RunIndex
+                SprayCount                     = $result.SprayCount
+                Status                         = $result.Status
+                FailureKind                    = $result.FailureKind
+                HasBadCleanup                  = $result.HasBadCleanup
+                HasPayloadRelease              = $result.HasPayloadRelease
+                HasExactReuseRuntime           = $result.HasExactReuseRuntime
+                HasWatchHit                    = $result.HasWatchHit
+                MarkerFound                    = $result.MarkerFound
+                PostPayloadAlloc20Count        = $result.PostPayloadAlloc20Count
+                FirstPostPayloadAlloc20Delta   = $result.FirstPostPayloadAlloc20Delta
+                ClosestPostPayloadAlloc20Delta = $result.ClosestPostPayloadAlloc20Delta
+                PostPayloadAllocSummary        = $result.PostPayloadAllocSummary
+                BestPostPayloadAllocSize       = $result.BestPostPayloadAllocSize
+                BestPostPayloadAllocDelta      = $result.BestPostPayloadAllocDelta
+                ClosestPositivePostPayloadAllocDelta = $result.ClosestPositivePostPayloadAllocDelta
+                ClosestNegativePostPayloadAllocDelta = $result.ClosestNegativePostPayloadAllocDelta
+                ClosestAbsolutePostPayloadAllocDelta = $result.ClosestAbsolutePostPayloadAllocDelta
+                PreviewInitializeHr            = $result.PreviewInitializeHr
+                PreviewTriggerExitCode         = $result.PreviewTriggerExitCode
+                PreviewTriggerHasExited        = $result.PreviewTriggerHasExited
+                DurationSeconds                = $result.DurationSeconds
+                TaskLastTaskResult             = $result.TaskLastTaskResult
+                TaskLastRunTime                = $result.TaskLastRunTime
+                CdbLog                         = $result.CdbLog
+                RemoteFailureDiagnostics       = $result.RemoteFailureDiagnostics
+            }
+
+            if (Test-Path $localReportPath) {
+                $flatResult | Export-Csv -Path $localReportPath -NoTypeInformation -Append
+            } else {
+                $flatResult | Export-Csv -Path $localReportPath -NoTypeInformation
+            }
+
+            Add-Content -Path $localEventsPath -Value ("`n===== RUN {0} spray={1} =====" -f $result.RunIndex, $result.SprayCount)
+            Add-Content -Path $localEventsPath -Value ("CDB_LOG={0}" -f $result.CdbLog)
+            $result.EventLines | Add-Content -Path $localEventsPath
+
+            $flatResult | Format-List
+
+            $hasSignal = (
+                $result.HasExactReuseRuntime -eq "True" -or
+                $result.HasWatchHit -eq "True" -or
+                $result.MarkerFound -eq "True"
+            )
+
+            if ($hasSignal -and $StopOnExactReuse) {
+                Write-Host "[+] StopOnExactReuse signal observed; stopping sweep." -ForegroundColor Green
+                $shouldStopSweep = $true
+                break
+            }
+
+            if ($DelayBetweenRunsSeconds -gt 0) {
+                Start-Sleep -Seconds $DelayBetweenRunsSeconds
+            }
+        }
+    }
+}
+finally {
+    $results | Export-Clixml -Path $localStatePath
+    if ($session) {
+        Remove-PSSession $session
+    }
+}
+
+Write-Host "`n[*] Report: $localReportPath" -ForegroundColor Cyan
+Write-Host "[*] Events: $localEventsPath" -ForegroundColor Cyan

@@ -1,0 +1,28 @@
+# Runtime proof artifacts
+results/
+scripts/
+remote-results/
+
+# Generated DOCX/cache artifacts
+docs/cache/
+docs/*.docx
+docs/poc-*.docx
+
+# Logs and debugger dumps
+*.log
+*.dmp
+*.dump
+*.etl
+
+# Local/editor/system files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+
+# Local secrets
+*.secret
+*.secrets
+*.env
+*.env.*
