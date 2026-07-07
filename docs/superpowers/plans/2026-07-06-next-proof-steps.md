@@ -160,6 +160,7 @@ cd C:\Development\test\cve-ps1
 - `spray=474` reached root-cause path in both runs and remains best. One run had `0x30` closest positive delta `0x68f40`; the next run had the best passive near-miss so far: `0x20` at `payload-0x3810`, `0x40` at `payload-0xc320`/`payload-0xbb50`, and `0x50` at `payload-0x1045c0`.
 - `spray=475` reached root-cause path but did not beat `474`; best was `0x30` positive delta `0x66b6d0`.
 - The strongest observed caller for close post-release allocations remains `00007ffe4bed4a57` on the same heap as the freed payload. The best `0x20` near-miss used thread `476c`.
+- Follow-up focused `spray=474` run with 3 repeats completed without exact reuse/write/marker. All 3 runs reached bad cleanup and payload release. Best delta in that batch was `0x30` positive `0x9e610`; useful, but it does not beat the prior `0x20` at `payload-0x3810`.
 - Next action: keep bounded `allocdiag` runs focused on `spray=474`; if repeated `474` runs stop showing close proximity, retest only immediate neighbors `473/475` before widening.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall

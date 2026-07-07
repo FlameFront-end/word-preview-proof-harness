@@ -165,6 +165,7 @@ This avoids accidentally reading stale rows from the shared `results\attempt-sum
 
 `Invoke-RemoteProofSweep.ps1 -StopOnExactReuse` must stop the whole sweep, not just the inner repeat loop.
 `Invoke-RemoteProofSweep.ps1` has a default bounded cooldown between runs via `-DelayBetweenRunsSeconds` to reduce back-to-back Scheduled Task/CDB startup instability.
+After `FailureKind=scheduled-task`, `Invoke-RemoteProofSweep.ps1` can use the longer `-ScheduledTaskFailureDelaySeconds` cooldown because recent `powershell.exe` `0xc0000005` startup crashes happened before stdout/stderr were created and repeated quickly with short pauses.
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
 ## Verification Commands

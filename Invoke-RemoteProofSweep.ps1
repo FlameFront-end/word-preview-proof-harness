@@ -25,6 +25,9 @@ param(
     [ValidateRange(0, 3600)]
     [int]$DelayBetweenRunsSeconds = 20,
 
+    [ValidateRange(0, 3600)]
+    [int]$ScheduledTaskFailureDelaySeconds = 180,
+
     [string]$LocalResultDirectory = ".\remote-results",
 
     [switch]$SkipCopy,
@@ -479,8 +482,13 @@ try {
                 break
             }
 
-            if ($DelayBetweenRunsSeconds -gt 0) {
-                Start-Sleep -Seconds $DelayBetweenRunsSeconds
+            $cooldownSeconds = $DelayBetweenRunsSeconds
+            if ($result.FailureKind -eq "scheduled-task" -and $ScheduledTaskFailureDelaySeconds -gt $cooldownSeconds) {
+                $cooldownSeconds = $ScheduledTaskFailureDelaySeconds
+            }
+
+            if ($cooldownSeconds -gt 0) {
+                Start-Sleep -Seconds $cooldownSeconds
             }
         }
     }
