@@ -127,6 +127,7 @@ Subsequent focused sweeps narrowed the useful passive range to `spray=474`.
 No exact reuse/write/marker has been observed yet, but `spray=474` now has the strongest allocator evidence:
 
 - 2026-07-07 `spray=474` repeated run: best signal was `0x20:count=6`, closest positive delta `0x2c5e0` from the freed payload pointer.
+- 2026-07-07 micro-sweep `spray=473,474,475`: `spray=474` again dominated. One run reached `0x20` allocation at `payload-0x3810`, plus `0x40` allocations at `payload-0xc320`/`payload-0xbb50` and `0x30` at `payload+0x2324b0`. This is the closest passive proximity observed so far, but it is still not exact reuse.
 - Other useful `spray=474` runs showed `0x40` closest deltas around `0x84090`, `0x119fe0`, and `0x198f60`, plus `0x30` pressure.
 - `spray=475` remains a secondary candidate, but the latest best evidence shifted from `475` to `474`.
 - `spray=474` has intermittent scheduled-task/CDB startup failures; the remote wrapper records these as failed rows and continues.
@@ -153,6 +154,7 @@ Current diagnostics include:
 - spray duration and tables/sec in attempt summaries.
 - preview trigger `Initialize hr`, exit code, and exit state in attempt summaries.
 - remote Scheduled Task result metadata and timeout/crash diagnostics in remote reports.
+- remote wrapper report tails: `RemoteOutputTail`, `RemoteErrorTail`, `LastTriggerStage`, and `LastHarnessError`.
 
 Remote attempts now write unique per-run summary/ranking files:
 
@@ -262,7 +264,7 @@ Keep this plan updated after each completed step. If a step changes the evidence
    - `AGENTS.md`
 
 4. Current best passive candidate is `spray=474`.
-   Prefer repeated bounded `allocdiag` runs on `spray=474` before returning to broader ranges.
+   Prefer repeated bounded `allocdiag` runs on `spray=474` before returning to broader ranges. The strongest observed near-miss is `0x20` at `payload-0x3810`.
 
 5. Rank candidates by:
    - exact reuse/write/marker first

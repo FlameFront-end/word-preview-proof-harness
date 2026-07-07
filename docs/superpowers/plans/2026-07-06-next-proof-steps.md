@@ -155,7 +155,12 @@ cd C:\Development\test\cve-ps1
 - Code update after this run: `Invoke-RemoteProofSweep.ps1` now syncs/runs both static test files on the VM and defaults to a bounded cooldown between runs. `run-proof.ps1` now ranks closest allocation deltas across all monitored sizes, not only legacy `0x20` events.
 - Follow-up fix: the all-size allocation summary initially hit a PowerShell `Argument types do not match` binder error on mixed delta groups. `run-proof.ps1` now stores absolute deltas as signed `Int64` and materializes size groups with `.ToArray()` before sorting. VM static checks passed after sync.
 - 2026-07-07 validation run after the parser fix: `spray=474`, 2 repeats. No exact reuse/write/marker. One useful run reached bad cleanup and payload release with `0x30` closest negative delta `0xfffffffffff418a0` (about `-0xbe760`); one run failed in CDB startup. This does not beat the prior best `0x2c5e0`, but confirms all-size summary no longer drops useful runs.
-- Next action: keep bounded `allocdiag` runs focused on `spray=474`; only broaden again if the sub-megabyte proximity stops repeating.
+- 2026-07-07 micro-sweep `spray=473,474,475`, intended 2 repeats each, completed 5 valid runs before local command timeout. No exact reuse/write/marker.
+- `spray=473` reached root-cause path in both runs, with best `0x20` positive deltas `0x4ea9d0` and `0x2786f20`.
+- `spray=474` reached root-cause path in both runs and remains best. One run had `0x30` closest positive delta `0x68f40`; the next run had the best passive near-miss so far: `0x20` at `payload-0x3810`, `0x40` at `payload-0xc320`/`payload-0xbb50`, and `0x50` at `payload-0x1045c0`.
+- `spray=475` reached root-cause path but did not beat `474`; best was `0x30` positive delta `0x66b6d0`.
+- The strongest observed caller for close post-release allocations remains `00007ffe4bed4a57` on the same heap as the freed payload. The best `0x20` near-miss used thread `476c`.
+- Next action: keep bounded `allocdiag` runs focused on `spray=474`; if repeated `474` runs stop showing close proximity, retest only immediate neighbors `473/475` before widening.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall
 
