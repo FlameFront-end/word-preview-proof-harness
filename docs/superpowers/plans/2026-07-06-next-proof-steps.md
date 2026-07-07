@@ -165,6 +165,9 @@ cd C:\Development\test\cve-ps1
 - With `-ScheduledTaskFailureDelaySeconds 300`, a focused `spray=474` batch completed 3/3 valid runs without scheduled-task crashes, but no exact reuse/write/marker. Best delta in that batch was `0x40` positive `0x45f7ef0`.
 - Neighbor retest `spray=473,474,475` showed: `473` best `0x40 +0x87a4a20`, `474` best `0x20 +0x248bb0`, and `475` failed at preview-trigger before CoCreateInstance. This keeps `474` as the only candidate worth repeated attempts.
 - Aggregate local report ranking confirms the top near-misses are all `spray=474`: `0x3810`, `0x2c5e0`, `0x68f40`, `0x9e610`, and `0xbe760` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
+- Two follow-up `spray=474` batches added 8 more valid root-cause runs and 2 failed starts (`preview-trigger` once, `scheduled-task` once). Exact reuse/write/marker was not observed.
+- The second follow-up batch produced a new second-best near-miss: `0x20` and `0x30` allocations at `payload-0x21100` (`135424` bytes). This does not beat the best `payload-0x3810`, but confirms `spray=474` still repeatedly produces close allocator placement.
+- Current local count is 31 valid `spray=474` root-cause runs after fixes/focused sweeps; the old `spray=400` reported success remains a known false positive and must not be counted.
 - Next action: continue bounded `allocdiag` batches on `spray=474` with `-ScheduledTaskFailureDelaySeconds 300`. Do not widen until `474` stops reaching the root-cause path or a new Frida/CDB diagnostic changes the hypothesis.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall

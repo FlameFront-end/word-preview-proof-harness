@@ -129,7 +129,8 @@ No exact reuse/write/marker has been observed yet, but `spray=474` now has the s
 - 2026-07-07 `spray=474` repeated run: best signal was `0x20:count=6`, closest positive delta `0x2c5e0` from the freed payload pointer.
 - 2026-07-07 micro-sweep `spray=473,474,475`: `spray=474` again dominated. One run reached `0x20` allocation at `payload-0x3810`, plus `0x40` allocations at `payload-0xc320`/`payload-0xbb50` and `0x30` at `payload+0x2324b0`. This is the closest passive proximity observed so far, but it is still not exact reuse.
 - Other useful `spray=474` runs showed `0x40` closest deltas around `0x84090`, `0x119fe0`, and `0x198f60`, plus `0x30` pressure.
-- Aggregate local reports confirm the top near-misses are all `spray=474`: `0x3810`, `0x2c5e0`, `0x68f40`, `0x9e610`, and `0xbe760` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
+- Aggregate local reports confirm the top near-misses are all `spray=474`: `0x3810`, `0x21100`, `0x2c5e0`, `0x68f40`, and `0x9e610` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
+- As of the 2026-07-07 `remote-proof-20260707-191538` batch, there are 31 valid focused `spray=474` root-cause runs without exact reuse/write/marker. The old `spray=400` reported success is a known pre-fix false positive and must not be counted.
 - `spray=475` is no longer a good secondary candidate unless new diagnostics change the hypothesis; recent runs either fail at preview-trigger or remain much farther from the freed payload than `474`.
 - `spray=474` has intermittent scheduled-task/CDB startup failures; the remote wrapper records these as failed rows and continues.
 
