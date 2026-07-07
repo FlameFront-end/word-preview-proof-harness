@@ -153,6 +153,8 @@ cd C:\Development\test\cve-ps1
 - Exact reuse/write/marker has not been observed yet.
 - `spray=474` has intermittent scheduled-task and CDB startup failures, but the wrapper records failures and continues.
 - Code update after this run: `Invoke-RemoteProofSweep.ps1` now syncs/runs both static test files on the VM and defaults to a bounded cooldown between runs. `run-proof.ps1` now ranks closest allocation deltas across all monitored sizes, not only legacy `0x20` events.
+- Follow-up fix: the all-size allocation summary initially hit a PowerShell `Argument types do not match` binder error on mixed delta groups. `run-proof.ps1` now stores absolute deltas as signed `Int64` and materializes size groups with `.ToArray()` before sorting. VM static checks passed after sync.
+- 2026-07-07 validation run after the parser fix: `spray=474`, 2 repeats. No exact reuse/write/marker. One useful run reached bad cleanup and payload release with `0x30` closest negative delta `0xfffffffffff418a0` (about `-0xbe760`); one run failed in CDB startup. This does not beat the prior best `0x2c5e0`, but confirms all-size summary no longer drops useful runs.
 - Next action: keep bounded `allocdiag` runs focused on `spray=474`; only broaden again if the sub-megabyte proximity stops repeating.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall
