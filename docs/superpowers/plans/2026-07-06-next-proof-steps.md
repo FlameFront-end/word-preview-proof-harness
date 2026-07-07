@@ -161,7 +161,11 @@ cd C:\Development\test\cve-ps1
 - `spray=475` reached root-cause path but did not beat `474`; best was `0x30` positive delta `0x66b6d0`.
 - The strongest observed caller for close post-release allocations remains `00007ffe4bed4a57` on the same heap as the freed payload. The best `0x20` near-miss used thread `476c`.
 - Follow-up focused `spray=474` run with 3 repeats completed without exact reuse/write/marker. All 3 runs reached bad cleanup and payload release. Best delta in that batch was `0x30` positive `0x9e610`; useful, but it does not beat the prior `0x20` at `payload-0x3810`.
-- Next action: keep bounded `allocdiag` runs focused on `spray=474`; if repeated `474` runs stop showing close proximity, retest only immediate neighbors `473/475` before widening.
+- A subsequent `spray=474` batch hit two `scheduled-task` startup crashes (`powershell.exe` APPCRASH `0xc0000005`) after one valid run. The wrapper now supports `-ScheduledTaskFailureDelaySeconds`; VM checks passed after sync.
+- With `-ScheduledTaskFailureDelaySeconds 300`, a focused `spray=474` batch completed 3/3 valid runs without scheduled-task crashes, but no exact reuse/write/marker. Best delta in that batch was `0x40` positive `0x45f7ef0`.
+- Neighbor retest `spray=473,474,475` showed: `473` best `0x40 +0x87a4a20`, `474` best `0x20 +0x248bb0`, and `475` failed at preview-trigger before CoCreateInstance. This keeps `474` as the only candidate worth repeated attempts.
+- Aggregate local report ranking confirms the top near-misses are all `spray=474`: `0x3810`, `0x2c5e0`, `0x68f40`, `0x9e610`, and `0xbe760` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
+- Next action: continue bounded `allocdiag` batches on `spray=474` with `-ScheduledTaskFailureDelaySeconds 300`. Do not widen until `474` stops reaching the root-cause path or a new Frida/CDB diagnostic changes the hypothesis.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall
 
