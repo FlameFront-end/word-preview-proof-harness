@@ -173,6 +173,10 @@ function Invoke-RemoteAttempt {
             )
 
             $taskResultText = if ($TaskInfo) { $TaskInfo.LastTaskResult } else { "" }
+            $remoteOutputTail = Get-RemoteTextTail -Path $OutputPath
+            $remoteErrorTail = Get-RemoteTextTail -Path $ErrorPath
+            $lastTriggerStage = Get-LastRemotePatternLine -Path $OutputPath -Pattern "\[TRIGGER_STAGE\]"
+            $lastHarnessError = Get-LastRemotePatternLine -Path $OutputPath -Pattern "\[-\] Attempt #|failed:|ErrorMessage|Exception"
 
             [pscustomobject]@{
                 Timestamp                      = Get-Date -Format o
@@ -202,12 +206,49 @@ function Invoke-RemoteAttempt {
                 TaskLastRunTime                = if ($TaskInfo) { $TaskInfo.LastRunTime } else { "" }
                 RemoteOutput                   = $OutputPath
                 RemoteError                    = $ErrorPath
+                RemoteOutputTail               = $remoteOutputTail
+                RemoteErrorTail                = $remoteErrorTail
+                LastTriggerStage               = $lastTriggerStage
+                LastHarnessError               = $lastHarnessError
                 RemoteFailureDiagnostics       = $DiagnosticsPath
                 CdbLog                         = ""
                 EventLines                     = @(
                     "SCHEDULED_TASK_FAILURE task=$TaskName result=$taskResultText"
                 )
             }
+        }
+
+        function Get-RemoteTextTail {
+            param(
+                [string]$Path,
+                [int]$LineCount = 40,
+                [int]$MaxCharacters = 4000
+            )
+
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return "" }
+
+            $text = ((Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction SilentlyContinue) -join " | ")
+            $text = $text -replace "\s+", " "
+            if ($text.Length -gt $MaxCharacters) {
+                return $text.Substring($text.Length - $MaxCharacters)
+            }
+
+            return $text
+        }
+
+        function Get-LastRemotePatternLine {
+            param(
+                [string]$Path,
+                [string]$Pattern
+            )
+
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return "" }
+
+            $match = Select-String -Path $Path -Pattern $Pattern -ErrorAction SilentlyContinue |
+                Select-Object -Last 1
+            if (-not $match) { return "" }
+
+            return (($match.Line -replace "\s+", " ").Trim())
         }
 
         New-Item -ItemType Directory -Force (Join-Path $Directory "scripts") | Out-Null
@@ -291,14 +332,18 @@ finally {
         $lastRow = $summaryRows | Select-Object -Last 1
         $lastLogPath = if ($lastRow -and $lastRow.LogPath -and (Test-Path $lastRow.LogPath)) {
             $lastRow.LogPath
-        } elseif (-not $lastRow) {
+        } else {
             $lastLog = Get-ChildItem (Join-Path $Directory "results\cdb-proof-*.log") -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -ge $taskStartedAt.AddSeconds(-5) } |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
             if ($lastLog) { $lastLog.FullName } else { "" }
-        } else {
-            ""
         }
+
+        $remoteOutputTail = Get-RemoteTextTail -Path $outputPath
+        $remoteErrorTail = Get-RemoteTextTail -Path $errorPath
+        $lastTriggerStage = Get-LastRemotePatternLine -Path $outputPath -Pattern "\[TRIGGER_STAGE\]"
+        $lastHarnessError = Get-LastRemotePatternLine -Path $outputPath -Pattern "\[-\] Attempt #|failed:|ErrorMessage|Exception"
 
         $eventLines = @()
         if ($lastLogPath) {
@@ -337,6 +382,10 @@ finally {
             TaskLastRunTime                = if ($taskInfoAfterRun) { $taskInfoAfterRun.LastRunTime } else { "" }
             RemoteOutput                   = $outputPath
             RemoteError                    = $errorPath
+            RemoteOutputTail               = $remoteOutputTail
+            RemoteErrorTail                = $remoteErrorTail
+            LastTriggerStage               = $lastTriggerStage
+            LastHarnessError               = $lastHarnessError
             RemoteFailureDiagnostics       = $remoteFailureDiagnosticsPath
             CdbLog                         = $lastLogPath
             EventLines                     = $eventLines
@@ -399,6 +448,10 @@ try {
                 TaskLastTaskResult             = $result.TaskLastTaskResult
                 TaskLastRunTime                = $result.TaskLastRunTime
                 CdbLog                         = $result.CdbLog
+                RemoteOutputTail               = $result.RemoteOutputTail
+                RemoteErrorTail                = $result.RemoteErrorTail
+                LastTriggerStage               = $result.LastTriggerStage
+                LastHarnessError               = $result.LastHarnessError
                 RemoteFailureDiagnostics       = $result.RemoteFailureDiagnostics
             }
 
