@@ -716,9 +716,9 @@ function Get-PostPayloadAllocSummary {
         $unsignedValue = [Convert]::ToUInt64($normalized, 16)
         $isNegative = $unsignedValue -gt [UInt64][Int64]::MaxValue
         $absoluteValue = if ($isNegative) {
-            ([UInt64]::MaxValue - $unsignedValue) + 1
+            [Int64](([UInt64]::MaxValue - $unsignedValue) + [UInt64]1)
         } else {
-            $unsignedValue
+            [Int64]$unsignedValue
         }
 
         return [pscustomobject]@{
@@ -782,7 +782,7 @@ function Get-PostPayloadAllocSummary {
     $bestSize = ""
     $bestDelta = $null
     foreach ($size in ($sizeGroups.Keys | Sort-Object)) {
-        $sizeDeltas = @($sizeGroups[$size])
+        $sizeDeltas = @($sizeGroups[$size].ToArray())
         $closest = if ($sizeDeltas.Count -gt 0) {
             $sizeDeltas | Sort-Object Absolute | Select-Object -First 1
         } else {

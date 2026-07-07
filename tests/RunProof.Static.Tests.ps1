@@ -112,6 +112,7 @@ Assert-Contains $scriptText 'function\s+Get-PostPayloadAllocSummary' "Post-paylo
 Assert-Contains $scriptText '\$allParsedDeltas' "Post-payload allocation summary does not parse deltas across all monitored allocation sizes"
 Assert-Contains $scriptText 'ClosestAbsoluteDelta\s*=\s*if\s*\(\$allParsedDeltas\.Count\s+-gt\s+0\)' "Closest absolute allocation delta is still restricted to legacy 0x20 events"
 Assert-Contains $scriptText 'BestDelta\s*=\s*if\s*\(\$bestDelta\)\s*\{\s*\$bestDelta\.Text' "Best allocation delta is not selected using parsed absolute delta ordering"
+Assert-Contains $scriptText '\$sizeGroups\[\$size\]\.ToArray\(\)' "Post-payload allocation size groups are not materialized safely before sorting"
 Assert-Contains $scriptText 'function\s+Get-DocxCachePath' "DOCX cache path helper is missing"
 Assert-Contains $scriptText 'function\s+Copy-DocxFromCache' "DOCX cache copy helper is missing"
 Assert-Contains $scriptText 'function\s+Remove-AttemptArtifacts' "Artifact cleanup helper is missing"
