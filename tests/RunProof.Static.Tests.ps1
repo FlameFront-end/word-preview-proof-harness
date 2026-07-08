@@ -165,6 +165,9 @@ Assert-NotContains $scriptText 'CDB_POST_PAYLOAD_ALLOC20_STACK' "Generic allocat
 Assert-Contains $scriptText 'CDB_POST_PAYLOAD_ALLOC_RETURN' "Multi-size post-payload allocation diagnostic tag is missing"
 Assert-Contains $scriptText 'CDB_ALLOC_DIAG_COMPLETE' "Allocdiag completion tag is missing"
 Assert-Contains $scriptText 'heap=%p flags=%p caller=%p tid=%x' "Post-payload allocation diagnostics do not include heap, flags, caller, and thread"
+Assert-Contains $scriptText 'ntdll!RtlFreeHeap' "CDB command string missing: ntdll!RtlFreeHeap"
+Assert-Contains $scriptText 'CDB_PAYLOAD_RTLFREEHEAP_ENTER' "Payload RtlFreeHeap diagnostic tag is missing"
+Assert-Contains $scriptText 'freeHeap=%p freeTid=%x sameFreeHeap=%d sameFreeThread=%d' "Post-payload allocation diagnostics do not compare allocation heap/thread with freed payload heap/thread"
 Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_RETURN' "Frida-matched 0x20 allocation target diagnostic tag is missing"
 Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_STACK' "Frida-matched 0x20 allocation stack diagnostic tag is missing"
 Assert-Contains $scriptText 'mso20win32client\+0x2a50d9' "Frida-matched 0x20 allocation caller target is not module-relative"
@@ -174,6 +177,9 @@ Assert-Contains $scriptText 'mso20win32client\+0x2a4a57' "Near-miss 0x30 allocat
 Assert-NotContains $scriptText '@\$\w+\s*==\s*0x00007ffe(?:aa6850d9|4bed4a57)' "Targeted allocation diagnostics must not compare caller against ASLR-sensitive absolute addresses"
 Assert-Contains $scriptText 'r\s+@\$t14\s*=\s*0' "Frida-matched allocation stack counter is not initialized"
 Assert-Contains $scriptText 'r\s+@\$t15\s*=\s*0' "Near-miss allocation stack counter is not initialized"
+Assert-Contains $scriptText 'r\s+@\$t16\s*=\s*0' "Freed payload heap pseudo-register is not initialized"
+Assert-Contains $scriptText 'r\s+@\$t18\s*=\s*0' "Freed payload thread pseudo-register is not initialized"
+Assert-Contains $scriptText 'RtlAllocateHeap[\s\S]*''bd 5''[\s\S]*wwlib\+0xd96cf0[\s\S]*''bu ntdll!RtlFreeHeap' "Payload RtlFreeHeap breakpoint must be installed after allocator and doc-lookup breakpoints to preserve CDB breakpoint IDs"
 $rtlAllocateHeapBreakpointCount = [regex]::Matches($scriptText, 'bu\s+ntdll!RtlAllocateHeap').Count
 if ($rtlAllocateHeapBreakpointCount -ne 1) {
     throw "run-proof.ps1 must keep a single RtlAllocateHeap breakpoint; duplicate breakpoints redefine CDB breakpoint 5"

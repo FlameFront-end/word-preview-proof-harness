@@ -195,3 +195,16 @@ Verification batch:
 - RUN 2 и RUN 3 достигли `HasBadCleanup=True` и `HasPayloadRelease=True`, но exact reuse/write/marker не найден.
 - Post-release allocation events и targeted tags в этом batch не появились.
 - Полные CDB logs сохранены локально в `remote-results\remote-proof-20260708-164249`.
+
+## 2026-07-08 payload free heap/thread diagnostics
+
+- Следующая гипотеза после Frida comparison: passive CDB events должны различать просто близкий allocation и allocation на том же heap/thread, где реально был освобождён payload.
+- Добавил TDD static checks для `ntdll!RtlFreeHeap`, `CDB_PAYLOAD_RTLFREEHEAP_ENTER` и полей `freeHeap`, `freeTid`, `sameFreeHeap`, `sameFreeThread`; сначала проверки падали на отсутствующем diagnostic.
+- `run-proof.ps1` теперь ловит `RtlFreeHeap(payload)`, сохраняет freed heap/thread в pseudo-registers и добавляет comparison fields в общие post-payload allocation lines, legacy `0x20`, Frida-matched `0x20` и near-miss `0x30` targeted lines.
+- `Invoke-RemoteProofSweep.ps1` теперь экспортирует `CDB_PAYLOAD_RTLFREEHEAP_ENTER` в `remote-proof-events.log`.
+- Важный порядок breakpoint-ов: `RtlFreeHeap` breakpoint должен ставиться после `RtlAllocateHeap`, `bd 5` и `wwlib+0xd96cf0`, чтобы allocator оставался breakpoint 5 и doc lookup return оставался breakpoint 6.
+- Первый вариант нарушил это: CDB log показал `breakpoint 5 redefined` перед `RtlAllocateHeap`. Исправлено перемещением `RtlFreeHeap` ниже doc-lookup breakpoint и добавлен static guard на порядок.
+- Локально прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks для `run-proof.ps1` / `Invoke-RemoteProofSweep.ps1`.
+- Синхронизировал изменения на VM; VM static/parser checks прошли.
+- Контрольный run `remote-results\remote-proof-20260708-174513` подтвердил CDB install order: `RtlAllocateHeap` остался breakpoint 5, `wwlib+0xd96cf0` стал breakpoint 6, `RtlFreeHeap` стал breakpoint 7, `breakpoint 5 redefined` больше нет.
+- Этот run не дошёл до root-cause path (`HasBadCleanup=False`, `HasPayloadRelease=False`), поэтому runtime tag `CDB_PAYLOAD_RTLFREEHEAP_ENTER` ещё не подтверждён реальным payload free. Для этого нужен следующий root-cause allocdiag sample, не обязательно новый идентичный batch прямо сейчас.

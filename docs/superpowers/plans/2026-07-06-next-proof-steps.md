@@ -226,3 +226,11 @@ cd C:\Development\test\cve-ps1
   - `mso20win32client+0x2a50d9` still has not appeared in passive CDB after the module-relative fix.
   - Batch quality was poor: 2 valid root-cause/no-success runs out of 6, with 3 Scheduled Task `0xc0000005` failures and 1 preview-trigger failure. Do not run another identical `spray=474` batch as the next default step.
 - [ ] Decide the next non-identical step before more passive batches: either stabilize the Scheduled Task/PowerShell startup path, or change allocator-pressure/timing diagnostics to specifically target the still-missing `mso20win32client+0x2a50d9` Frida-matched path.
+  - [x] Add a narrow allocator-pressure diagnostic for the Frida heap/thread hypothesis.
+    `run-proof.ps1` now captures the actual `RtlFreeHeap(payload)` heap/thread as `CDB_PAYLOAD_RTLFREEHEAP_ENTER` and adds `freeHeap`, `freeTid`, `sameFreeHeap`, and `sameFreeThread` to post-payload allocation diagnostics.
+  - [x] Preserve CDB breakpoint IDs after adding the new diagnostic.
+    A first version installed `RtlFreeHeap` too early and real CDB logs showed `breakpoint 5 redefined`; the fixed command order installs `RtlAllocateHeap`, disables breakpoint 5, installs doc lookup return as breakpoint 6, then installs `RtlFreeHeap` as breakpoint 7.
+  - [x] Verify command installation order in a real VM run.
+    `remote-results\remote-proof-20260708-174513` shows no `breakpoint 5 redefined`; allocator remains breakpoint 5 and `RtlFreeHeap` is breakpoint 7.
+  - [ ] Verify `CDB_PAYLOAD_RTLFREEHEAP_ENTER` in a root-cause run.
+    The `remote-proof-20260708-174513` control run did not reach bad cleanup/payload release, so runtime payload free heap/thread capture still needs a root-cause sample.

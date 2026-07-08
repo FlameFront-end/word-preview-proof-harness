@@ -48,6 +48,7 @@ Assert-Contains $scriptText 'function\s+Get-LastRemotePatternLine' "Remote sweep
 Assert-Contains $scriptText 'function\s+Test-RemoteRuntimeEventLine' "Remote event export does not filter CDB command text from runtime events"
 Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_RETURN' "Remote event export is missing Frida-matched allocation diagnostics"
 Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_RETURN' "Remote event export is missing near-miss allocation diagnostics"
+Assert-Contains $scriptText 'CDB_PAYLOAD_RTLFREEHEAP_ENTER' "Remote event export is missing payload RtlFreeHeap diagnostics"
 Assert-Contains $scriptText 'Where-Object\s*\{\s*Test-RemoteRuntimeEventLine\s+-Line\s+\$_\s*\}' "Remote event export does not apply runtime-event filtering"
 Assert-Contains $scriptText '\$Line\s+-notmatch\s+''bu\\s\+\(wwlib\|ntdll\)''' "Remote runtime-event filtering does not exclude CDB breakpoint command text"
 Assert-Contains $scriptText '\$Line\s+-notmatch\s+''Numeric expression missing''' "Remote runtime-event filtering does not exclude CDB syntax error text"

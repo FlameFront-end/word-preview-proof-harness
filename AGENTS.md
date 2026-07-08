@@ -195,7 +195,8 @@ The 2026-07-08 focused module-relative target batch in `remote-results\remote-pr
 
 Current diagnostics include:
 
-- post-payload allocation lines with size, heap, flags, caller, thread id, return pointer, payload pointer, and delta.
+- post-payload allocation lines with size, heap, flags, caller, thread id, return pointer, payload pointer, delta, freed-payload heap/thread, and same-heap/same-thread booleans.
+- `CDB_PAYLOAD_RTLFREEHEAP_ENTER`, which captures the actual `RtlFreeHeap(payload)` heap/thread before comparing later allocations against the freed slot context.
 - one `CDB_PAYLOAD_RELEASE_STACK` stack capture at payload release.
 - bounded allocation stack capture controlled by `PostPayloadAllocStackCount`.
 - targeted post-release allocation stack capture for:
@@ -239,6 +240,15 @@ The first retry-enabled verification batch was `remote-results\remote-proof-2026
 - RUN 2 and RUN 3 reached root-cause/no-success.
 - No exact reuse/write/marker.
 - No post-release allocation events or targeted tags appeared in that batch.
+
+The 2026-07-08 payload free diagnostic update added an `ntdll!RtlFreeHeap` breakpoint. It must be installed after the allocator and doc-lookup breakpoints:
+
+- `RtlAllocateHeap` remains CDB breakpoint 5 and is disabled by `bd 5` until payload release.
+- `wwlib+0xd96cf0` remains the doc lookup return breakpoint 6.
+- `RtlFreeHeap` is installed after those and becomes breakpoint 7.
+
+A first attempt installed `RtlFreeHeap` too early and caused `breakpoint 5 redefined`; this was fixed and guarded by static tests.
+The control run `remote-results\remote-proof-20260708-174513` verified the command installation order and absence of `breakpoint 5 redefined`, but did not reach root-cause path, so `CDB_PAYLOAD_RTLFREEHEAP_ENTER` still needs runtime confirmation in a root-cause sample.
 
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
@@ -359,6 +369,7 @@ Keep this plan updated after each completed step. If a step changes the evidence
    A follow-up module-relative check verified command installation but did not hit the targeted callers.
    The next focused batch hit `mso20win32client+0x2a4a57`, but only at `payload+0x4763b0`, with stack through `wwlib!PobjxCreate` / `PwwserverdocCreate` / `WWSERVEROBJ::Initialize`.
    The Frida-matched `mso20win32client+0x2a50d9` path remains missing in passive CDB.
+   A new payload-free heap/thread diagnostic now records `CDB_PAYLOAD_RTLFREEHEAP_ENTER` and annotates later allocations with same-free-heap/thread fields. The command order was verified in `remote-results\remote-proof-20260708-174513`, but that run did not reach root-cause path, so the runtime free tag still needs a valid root-cause sample.
    Do not run another identical `spray=474` batch until either Scheduled Task startup is stabilized or the allocator-pressure/timing hypothesis changes.
 
 8. For overnight runs, prefer many bounded attempts over one very long attempt.
@@ -376,6 +387,7 @@ After every proof run or code change:
 ## Current Risks
 
 - CDB command syntax for the any-size exact-reuse detector must be verified in a real VM run after syncing the latest local files.
+- `CDB_PAYLOAD_RTLFREEHEAP_ENTER` command installation order has been verified, but the runtime tag still needs confirmation in a root-cause run because the first control sample did not reach payload release.
 - WinRM/PowerShell progress streams can corrupt local wrapper result collection with CLIXML noise. Keep `$ProgressPreference = "SilentlyContinue"` in local, remote, and Scheduled Task runner contexts.
 - Scheduled Task / Office startup failures remain common in batches. Recent failures included `0xc0000005` and `0xc0000142`; the latest 6-run batch had 3 Scheduled Task `0xc0000005` failures and 1 preview-trigger failure. Treat those rows as invalid proof attempts and prioritize launcher stabilization before larger unattended sweeps.
 - VM Application/WER logs around unstable windows show crashes across `powershell.exe`, `cmd.exe`, `taskkill.exe`, `WINWORD.EXE`, `cdb.exe`, and Office helper processes. Do not assume all `scheduled-task` failures are wrapper bugs; capture diagnostics and reduce avoidable process-launch pressure.
