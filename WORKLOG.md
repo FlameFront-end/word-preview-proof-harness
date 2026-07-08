@@ -208,3 +208,14 @@ Verification batch:
 - Синхронизировал изменения на VM; VM static/parser checks прошли.
 - Контрольный run `remote-results\remote-proof-20260708-174513` подтвердил CDB install order: `RtlAllocateHeap` остался breakpoint 5, `wwlib+0xd96cf0` стал breakpoint 6, `RtlFreeHeap` стал breakpoint 7, `breakpoint 5 redefined` больше нет.
 - Этот run не дошёл до root-cause path (`HasBadCleanup=False`, `HasPayloadRelease=False`), поэтому runtime tag `CDB_PAYLOAD_RTLFREEHEAP_ENTER` ещё не подтверждён реальным payload free. Для этого нужен следующий root-cause allocdiag sample, не обязательно новый идентичный batch прямо сейчас.
+
+Follow-up runtime checks:
+
+- Batch `remote-results\remote-proof-20260708-180245`: 3 attempts, exact reuse/write/marker нет. RUN 1 failed `cdb`; RUN 2/3 не дошли до root-cause. RUN 3 подтвердил CDB install order без `breakpoint 5 redefined`, но дошёл только до `CDB_DOC_LOOKUP_RET`.
+- Batch `remote-results\remote-proof-20260708-220111`: 2 attempts with `ObserveMinutes=8`. RUN 1 потребовал 2 startup retries (`0xc0000005`) и дошёл только до doc lookup; RUN 2 failed `preview-trigger`.
+- Вывод после этих двух batches: активный с самого старта `RtlFreeHeap` breakpoint создавал pre-release CDB overhead. Даже при `$t2 == 0` CDB останавливался на каждом `RtlFreeHeap`, что коррелировало с потерей root-cause path.
+- Исправил `run-proof.ps1`: `RtlFreeHeap` breakpoint теперь сразу выключается через `bd 7` после установки и включается только в `CDB_PAYLOAD_RELEASE_ENTER` вместе с allocator breakpoint (`be 5; be 7`).
+- Добавил static guards: `RtlFreeHeap` должен быть disabled until payload release, payload release должен включать `be 5; be 7`.
+- Verification batch `remote-results\remote-proof-20260708-222714`: 2/2 runs снова достигли root-cause/payload release. RUN 1 подтвердил `CDB_PAYLOAD_RTLFREEHEAP_ENTER` и post-release allocations with `sameFreeHeap=1`, `sameFreeThread=0`; closest observed allocation was still far (`0x30` at `payload+0x6e00050`, `0x20` at `payload+0xb12bb10`). Exact reuse/write/marker нет.
+- RUN 2 в том же batch показал, что `RtlFreeHeap` breakpoint оставался включённым и печатал repeated payload-free lines. Исправил self-disable: matched `RtlFreeHeap(payload)` branch теперь выполняет `bd 7` после первого capture.
+- Final verification sample `remote-results\remote-proof-20260708-224643`: root-cause/payload release достигнут, exact reuse/write/marker нет, post-release allocations нет. CDB log подтвердил command shape: `be 5; be 7`, `bu ntdll!RtlFreeHeap ... CDB_PAYLOAD_RTLFREEHEAP_ENTER ... bd 7`, затем install-time `bd 7`. В этом sample `CDB_PAYLOAD_RTLFREEHEAP_ENTER` не hit-нулся, поэтому runtime self-disable ждёт подтверждения на следующем sample, где payload free проходит через этот breakpoint.

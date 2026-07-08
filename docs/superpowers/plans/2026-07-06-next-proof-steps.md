@@ -232,5 +232,9 @@ cd C:\Development\test\cve-ps1
     A first version installed `RtlFreeHeap` too early and real CDB logs showed `breakpoint 5 redefined`; the fixed command order installs `RtlAllocateHeap`, disables breakpoint 5, installs doc lookup return as breakpoint 6, then installs `RtlFreeHeap` as breakpoint 7.
   - [x] Verify command installation order in a real VM run.
     `remote-results\remote-proof-20260708-174513` shows no `breakpoint 5 redefined`; allocator remains breakpoint 5 and `RtlFreeHeap` is breakpoint 7.
-  - [ ] Verify `CDB_PAYLOAD_RTLFREEHEAP_ENTER` in a root-cause run.
-    The `remote-proof-20260708-174513` control run did not reach bad cleanup/payload release, so runtime payload free heap/thread capture still needs a root-cause sample.
+  - [x] Verify `CDB_PAYLOAD_RTLFREEHEAP_ENTER` in a root-cause run.
+    `remote-results\remote-proof-20260708-222714` verified the runtime tag in RUN 1. The observed post-release allocations were on the same heap as the freed payload but on a different thread, and they were still far from payload (`0x30 +0x6e00050`, `0x20 +0xb12bb10`).
+  - [x] Avoid pre-release `RtlFreeHeap` CDB overhead.
+    Two follow-up batches stalled before root-cause after the always-active `RtlFreeHeap` breakpoint was added. `run-proof.ps1` now installs it as breakpoint 7, immediately disables it with `bd 7`, and enables it only after `CDB_PAYLOAD_RELEASE_ENTER` with `be 5; be 7`.
+  - [ ] Verify `RtlFreeHeap` self-disable in a runtime sample where payload free hits the breakpoint.
+    `remote-results\remote-proof-20260708-224643` verified the command shape with `bd 7` inside the matched `RtlFreeHeap(payload)` branch, but that particular root-cause sample did not hit `CDB_PAYLOAD_RTLFREEHEAP_ENTER`.

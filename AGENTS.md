@@ -245,10 +245,15 @@ The 2026-07-08 payload free diagnostic update added an `ntdll!RtlFreeHeap` break
 
 - `RtlAllocateHeap` remains CDB breakpoint 5 and is disabled by `bd 5` until payload release.
 - `wwlib+0xd96cf0` remains the doc lookup return breakpoint 6.
-- `RtlFreeHeap` is installed after those and becomes breakpoint 7.
+- `RtlFreeHeap` is installed after those, becomes breakpoint 7, and must be disabled with `bd 7` until payload release.
+- `CDB_PAYLOAD_RELEASE_ENTER` enables both allocation and free diagnostics with `be 5; be 7`.
+- The matched `RtlFreeHeap(payload)` branch disables itself with `bd 7` after the first capture to avoid repeated payload-free lines.
 
 A first attempt installed `RtlFreeHeap` too early and caused `breakpoint 5 redefined`; this was fixed and guarded by static tests.
-The control run `remote-results\remote-proof-20260708-174513` verified the command installation order and absence of `breakpoint 5 redefined`, but did not reach root-cause path, so `CDB_PAYLOAD_RTLFREEHEAP_ENTER` still needs runtime confirmation in a root-cause sample.
+The control run `remote-results\remote-proof-20260708-174513` verified the command installation order and absence of `breakpoint 5 redefined`, but did not reach root-cause path.
+Follow-up batches showed that an always-active `RtlFreeHeap` breakpoint causes pre-release CDB overhead and can stall before root-cause; keep it disabled until payload release.
+`remote-results\remote-proof-20260708-222714` verified `CDB_PAYLOAD_RTLFREEHEAP_ENTER` in RUN 1. The observed allocations were on the same heap as the freed payload but on a different thread, and still far from payload.
+`remote-results\remote-proof-20260708-224643` verified the self-disable command shape in a root-cause sample, but that sample did not hit `CDB_PAYLOAD_RTLFREEHEAP_ENTER`; runtime self-disable remains to be seen in a later sample that hits the free breakpoint.
 
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
@@ -369,7 +374,7 @@ Keep this plan updated after each completed step. If a step changes the evidence
    A follow-up module-relative check verified command installation but did not hit the targeted callers.
    The next focused batch hit `mso20win32client+0x2a4a57`, but only at `payload+0x4763b0`, with stack through `wwlib!PobjxCreate` / `PwwserverdocCreate` / `WWSERVEROBJ::Initialize`.
    The Frida-matched `mso20win32client+0x2a50d9` path remains missing in passive CDB.
-   A new payload-free heap/thread diagnostic now records `CDB_PAYLOAD_RTLFREEHEAP_ENTER` and annotates later allocations with same-free-heap/thread fields. The command order was verified in `remote-results\remote-proof-20260708-174513`, but that run did not reach root-cause path, so the runtime free tag still needs a valid root-cause sample.
+   A new payload-free heap/thread diagnostic now records `CDB_PAYLOAD_RTLFREEHEAP_ENTER` and annotates later allocations with same-free-heap/thread fields. Runtime was verified in `remote-results\remote-proof-20260708-222714`: allocations were same heap but different thread and still far from payload. Keep `RtlFreeHeap` disabled until payload release; an always-active free breakpoint stalled root-cause progress.
    Do not run another identical `spray=474` batch until either Scheduled Task startup is stabilized or the allocator-pressure/timing hypothesis changes.
 
 8. For overnight runs, prefer many bounded attempts over one very long attempt.
@@ -387,7 +392,7 @@ After every proof run or code change:
 ## Current Risks
 
 - CDB command syntax for the any-size exact-reuse detector must be verified in a real VM run after syncing the latest local files.
-- `CDB_PAYLOAD_RTLFREEHEAP_ENTER` command installation order has been verified, but the runtime tag still needs confirmation in a root-cause run because the first control sample did not reach payload release.
+- `CDB_PAYLOAD_RTLFREEHEAP_ENTER` runtime capture has been verified, but runtime self-disable needs confirmation in a later sample that hits the free breakpoint after the `bd 7` self-disable change.
 - WinRM/PowerShell progress streams can corrupt local wrapper result collection with CLIXML noise. Keep `$ProgressPreference = "SilentlyContinue"` in local, remote, and Scheduled Task runner contexts.
 - Scheduled Task / Office startup failures remain common in batches. Recent failures included `0xc0000005` and `0xc0000142`; the latest 6-run batch had 3 Scheduled Task `0xc0000005` failures and 1 preview-trigger failure. Treat those rows as invalid proof attempts and prioritize launcher stabilization before larger unattended sweeps.
 - VM Application/WER logs around unstable windows show crashes across `powershell.exe`, `cmd.exe`, `taskkill.exe`, `WINWORD.EXE`, `cdb.exe`, and Office helper processes. Do not assume all `scheduled-task` failures are wrapper bugs; capture diagnostics and reduce avoidable process-launch pressure.

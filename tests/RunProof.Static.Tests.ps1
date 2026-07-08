@@ -180,11 +180,13 @@ Assert-Contains $scriptText 'r\s+@\$t15\s*=\s*0' "Near-miss allocation stack cou
 Assert-Contains $scriptText 'r\s+@\$t16\s*=\s*0' "Freed payload heap pseudo-register is not initialized"
 Assert-Contains $scriptText 'r\s+@\$t18\s*=\s*0' "Freed payload thread pseudo-register is not initialized"
 Assert-Contains $scriptText 'RtlAllocateHeap[\s\S]*''bd 5''[\s\S]*wwlib\+0xd96cf0[\s\S]*''bu ntdll!RtlFreeHeap' "Payload RtlFreeHeap breakpoint must be installed after allocator and doc-lookup breakpoints to preserve CDB breakpoint IDs"
+Assert-Contains $scriptText '''bu ntdll!RtlFreeHeap[\s\S]*''bd 7''' "Payload RtlFreeHeap breakpoint must be disabled until payload release to avoid pre-release CDB overhead"
+Assert-Contains $scriptText 'bu ntdll!RtlFreeHeap[^\r\n]*CDB_PAYLOAD_RTLFREEHEAP_ENTER[^\r\n]*bd 7' "Payload RtlFreeHeap breakpoint must disable itself after the first matching payload free"
+Assert-Contains $scriptText 'wwlib\+0x7a140[\s\S]*be 5;\s*be 7[\s\S]*CDB_PAYLOAD_RELEASE_ENTER' "Payload release must enable both allocation and RtlFreeHeap diagnostics"
 $rtlAllocateHeapBreakpointCount = [regex]::Matches($scriptText, 'bu\s+ntdll!RtlAllocateHeap').Count
 if ($rtlAllocateHeapBreakpointCount -ne 1) {
     throw "run-proof.ps1 must keep a single RtlAllocateHeap breakpoint; duplicate breakpoints redefine CDB breakpoint 5"
 }
-Assert-NotContains $scriptText 'be 5;\s*be 7' "Payload release enables a duplicate targeted RtlAllocateHeap breakpoint"
 Assert-NotContains $scriptText '@\$\w+\s*==\s*0x20[\s\S]{0,300}CDB_EXACT_REUSE_RUNTIME' "Exact reuse detector is still restricted to 0x20 allocations"
 Assert-NotContains $scriptText '@r8\s*==\s*0x10\s*\|\|' "CDB allocation size filter uses unsupported || syntax"
 Assert-Contains $scriptText "Numeric expression missing" "Runtime parser does not exclude CDB syntax error lines from evidence"
