@@ -28,6 +28,12 @@ param(
     [ValidateRange(0, 3600)]
     [int]$ScheduledTaskFailureDelaySeconds = 180,
 
+    [ValidateRange(0, 10)]
+    [int]$ScheduledTaskStartupRetryCount = 2,
+
+    [ValidateRange(0, 3600)]
+    [int]$ScheduledTaskStartupRetryDelaySeconds = 120,
+
     [string]$LocalResultDirectory = ".\remote-results",
 
     [switch]$SkipCopy,
@@ -442,7 +448,30 @@ try {
             $runIndex++
             Write-Host ("`n===== REMOTE RUN {0}: spray={1} repeat={2}/{3} =====" -f $runIndex, $sprayCount, $repeat, $RepeatsPerSpray) -ForegroundColor Cyan
 
-            $result = Invoke-RemoteAttempt -Session $session -SprayCount $sprayCount -RunIndex $runIndex
+            $scheduledTaskStartupAttempt = 0
+            while ($true) {
+                $result = Invoke-RemoteAttempt -Session $session -SprayCount $sprayCount -RunIndex $runIndex
+                if (
+                    $result.FailureKind -eq "scheduled-task" -and
+                    $scheduledTaskStartupAttempt -lt $ScheduledTaskStartupRetryCount
+                ) {
+                    $scheduledTaskStartupAttempt++
+                    $retryLine = "SCHEDULED_TASK_STARTUP_RETRY run=$runIndex retry=$scheduledTaskStartupAttempt max=$ScheduledTaskStartupRetryCount result=$($result.TaskLastTaskResult)"
+                    Write-Warning $retryLine
+                    Add-Content -Path $localEventsPath -Value ("`n===== RUN {0} spray={1} scheduled-task startup retry {2}/{3} =====" -f $result.RunIndex, $result.SprayCount, $scheduledTaskStartupAttempt, $ScheduledTaskStartupRetryCount)
+                    Add-Content -Path $localEventsPath -Value $retryLine
+                    Add-Content -Path $localEventsPath -Value ("CDB_LOG={0}" -f $result.CdbLog)
+                    $result.EventLines | Add-Content -Path $localEventsPath
+                    if ($ScheduledTaskStartupRetryDelaySeconds -gt 0) {
+                        Start-Sleep -Seconds $ScheduledTaskStartupRetryDelaySeconds
+                    }
+                    continue
+                }
+
+                break
+            }
+
+            $result | Add-Member -NotePropertyName ScheduledTaskStartupRetryCount -NotePropertyValue $scheduledTaskStartupAttempt -Force
             [void]$results.Add($result)
 
             $flatResult = [pscustomobject]@{
@@ -451,6 +480,7 @@ try {
                 SprayCount                     = $result.SprayCount
                 Status                         = $result.Status
                 FailureKind                    = $result.FailureKind
+                ScheduledTaskStartupRetryCount = $result.ScheduledTaskStartupRetryCount
                 HasBadCleanup                  = $result.HasBadCleanup
                 HasPayloadRelease              = $result.HasPayloadRelease
                 HasExactReuseRuntime           = $result.HasExactReuseRuntime

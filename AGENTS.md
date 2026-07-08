@@ -223,6 +223,23 @@ This avoids accidentally reading stale rows from the shared `results\attempt-sum
 `Invoke-RemoteProofSweep.ps1 -StopOnExactReuse` must stop the whole sweep, not just the inner repeat loop.
 `Invoke-RemoteProofSweep.ps1` has a default bounded cooldown between runs via `-DelayBetweenRunsSeconds` to reduce back-to-back Scheduled Task/CDB startup instability.
 After `FailureKind=scheduled-task`, `Invoke-RemoteProofSweep.ps1` can use the longer `-ScheduledTaskFailureDelaySeconds` cooldown because recent `powershell.exe` `0xc0000005` startup crashes happened before stdout/stderr were created and repeated quickly with short pauses.
+`Invoke-RemoteProofSweep.ps1` also has bounded startup retry handling for intermittent Scheduled Task `powershell.exe` crashes:
+
+- `ScheduledTaskStartupRetryCount` defaults to `2`.
+- `ScheduledTaskStartupRetryDelaySeconds` defaults to `120`.
+- Only `FailureKind=scheduled-task` is retried; `preview-trigger` failures and valid `no-success` rows are not retried.
+- Retry events are written as `SCHEDULED_TASK_STARTUP_RETRY`.
+- The local CSV report includes `ScheduledTaskStartupRetryCount`.
+
+This is a mitigation for VM/PowerShell startup flakiness before runner stdout/stderr, not proof evidence.
+The first retry-enabled verification batch was `remote-results\remote-proof-20260708-164249`:
+
+- 3 attempts on `spray=474` with `ScheduledTaskStartupRetryCount=2`.
+- 3/3 Scheduled Tasks completed with `TaskLastTaskResult=0`, so the retry path did not need to fire.
+- RUN 2 and RUN 3 reached root-cause/no-success.
+- No exact reuse/write/marker.
+- No post-release allocation events or targeted tags appeared in that batch.
+
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
 ## Verification Commands

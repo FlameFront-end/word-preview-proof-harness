@@ -213,6 +213,12 @@ cd C:\Development\test\cve-ps1
 - [ ] Stabilize Scheduled Task / Office startup failures before any larger unattended sweep.
   - [x] Remove `cmd.exe / taskkill.exe` from `clean-proof-state.ps1` to reduce avoidable external process crashes during Scheduled Task startup cleanup.
   - [x] Re-test failure rate with a small bounded batch before any larger unattended sweep.
+  - [x] Add bounded retry handling for `FailureKind=scheduled-task` startup crashes before counting a planned proof attempt as failed.
+    `Invoke-RemoteProofSweep.ps1` now exposes `ScheduledTaskStartupRetryCount` and `ScheduledTaskStartupRetryDelaySeconds`, records `SCHEDULED_TASK_STARTUP_RETRY` events, and adds `ScheduledTaskStartupRetryCount` to the local report.
+    This is a mitigation for intermittent `powershell.exe` APPCRASH before runner stdout/stderr, not proof evidence.
+  - [x] Verify the retry-enabled wrapper on VM with a short stability batch.
+    `remote-results\remote-proof-20260708-164249` completed 3/3 Scheduled Tasks with `TaskLastTaskResult=0`, so the retry path did not need to fire.
+    RUN 2 and RUN 3 reached root-cause/no-success; no exact reuse/write/marker and no post-release allocation events appeared.
 - [x] Verify module-relative targeted diagnostics in a real run that hits `mso20win32client+0x2a4a57` or `mso20win32client+0x2a50d9`.
   - 2026-07-08 focused batch `remote-results\remote-proof-20260708-121407` hit `mso20win32client+0x2a4a57` in RUN 1 and emitted `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`.
   - That hit was not close enough for proof: `0x30` returned `payload+0x4763b0`.

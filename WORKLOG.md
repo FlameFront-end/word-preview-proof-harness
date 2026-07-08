@@ -172,3 +172,26 @@ Follow-up bounded batch:
 - RUN 4 достиг root-cause path, но без monitored post-release allocations.
 - Полные CDB/diagnostics logs скопированы локально в `remote-results\remote-proof-20260708-121407`.
 - Вывод: module-relative диагностика `+0x2a4a57` теперь проверена реальным hit, но не улучшила proximity; `+0x2a50d9` всё ещё не появился. Не стоит запускать следующий идентичный `spray=474` batch до отдельного шага по launcher stability или новой гипотезы по allocator pressure.
+
+## 2026-07-08 Scheduled Task startup retry mitigation
+
+- Текущая evidence по `scheduled-task` failures указывает на intermittent `powershell.exe` APPCRASH до stdout/stderr и до выполнения runner script.
+- Это выглядит как VM/PowerShell startup flakiness, а не как proof-сигнал и не как deterministic harness error.
+- Добавил TDD static check для bounded startup retry в `Invoke-RemoteProofSweep.ps1`; сначала подтвердил RED.
+- Реализовал retry только для `FailureKind=scheduled-task`:
+  - `ScheduledTaskStartupRetryCount` default `2`;
+  - `ScheduledTaskStartupRetryDelaySeconds` default `120`;
+  - `preview-trigger` failures и валидные `no-success` не ретраятся;
+  - retry events пишутся в `remote-proof-events.log` как `SCHEDULED_TASK_STARTUP_RETRY`;
+  - итоговый CSV получил поле `ScheduledTaskStartupRetryCount`.
+- Локально прошли `RemoteProofSweep.Static.Tests.ps1` и parser check для `Invoke-RemoteProofSweep.ps1`.
+
+Verification batch:
+
+- Синхронизировал retry mitigation на VM и повторил VM static/parser checks; все прошли.
+- Запущен короткий stability batch: `remote-results\remote-proof-20260708-164249`, `spray=474`, `RepeatsPerSpray=3`, `ObserveMode=allocdiag`, `ObserveMinutes=4`, `ScheduledTaskStartupRetryCount=2`.
+- 3/3 Scheduled Tasks завершились с `TaskLastTaskResult=0`; startup retry не понадобился (`ScheduledTaskStartupRetryCount=0` во всех строках).
+- RUN 1 не дошёл до root-cause path.
+- RUN 2 и RUN 3 достигли `HasBadCleanup=True` и `HasPayloadRelease=True`, но exact reuse/write/marker не найден.
+- Post-release allocation events и targeted tags в этом batch не появились.
+- Полные CDB logs сохранены локально в `remote-results\remote-proof-20260708-164249`.
