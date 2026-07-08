@@ -1133,7 +1133,7 @@ function Run-Test {
     $allocationDiagnosticSizes = "0x10,0x20,0x30,0x40,0x50,0x60"
 
     $rtlAllocateHeapBreakpoint = @'
-bu ntdll!RtlAllocateHeap ".if (@$t2 != 0) { .if (@$t4 == 0) { r @$t13=0; .if (@r8 == 0x10) { r @$t13=1 }; .if (@r8 == 0x20) { r @$t13=1 }; .if (@r8 == 0x30) { r @$t13=1 }; .if (@r8 == 0x40) { r @$t13=1 }; .if (@r8 == 0x50) { r @$t13=1 }; .if (@r8 == 0x60) { r @$t13=1 }; .if (@$t13 != 0) { r @$t8=poi(@rsp); r @$t9=@r8; r @$t10=@rcx; r @$t11=@rdx; r @$t12=poi(@rsp); bp /1 @$t8 \".if (@$t6 < __TRACE_COUNT__) { r @$t6=@$t6+1; .printf \\\"\\n[CDB_POST_PAYLOAD_ALLOC_RETURN] index=%d ret=%p payload=%p delta=%p size=%p heap=%p flags=%p caller=%p tid=%x sizes=0x10,0x20,0x30,0x40,0x50,0x60\\\\n\\\", @$t6, @rax, @$t2, (@rax-@$t2), @$t9, @$t10, @$t11, @$t12, @$tid; .if (@$t9 == 0x20) { .printf \\\"[CDB_POST_PAYLOAD_ALLOC20_RETURN] index=%d ret=%p payload=%p delta=%p size=0x20 heap=%p flags=%p caller=%p tid=%x\\\\n\\\", @$t6, @rax, @$t2, (@rax-@$t2), @$t10, @$t11, @$t12, @$tid }; .if (@$t6 <= __STACK_COUNT__) { .printf \\\"[CDB_POST_PAYLOAD_ALLOC_STACK]\\\\n\\\"; kb }; .if (@$t6 >= __TRACE_COUNT__) { .printf \\\"[CDB_ALLOC_DIAG_COMPLETE] count=%d sizes=0x10,0x20,0x30,0x40,0x50,0x60\\\\n\\\", @$t6 } }; .if (@rax == @$t2) { r @$t4=1; r @$t5=@rax; bd 5; .printf \\\"\\n============================================================\\n\\\"; .printf \\\"[CDB_EXACT_REUSE_RUNTIME] RtlAllocateHeap returned freed payload ptr=%p size=%p\\\\n\\\", @rax, @$t9; .printf \\\"============================================================\\n\\\"; .printf \\\"[CDB_STACK]\\\\n\\\"; kb; .printf \\\"[CDB_REUSE_INITIAL_DUMP]\\n\\\"; db @rax L20; .printf \\\"[CDB_SETTING_WATCH_ON_REUSED_SLOT]\\n\\\"; ba w4 @$t5 \\\".printf \\\\\\\"[CDB_WRITE_TO_REUSED_SLOT] Write at %p, data: \\\\\\\", @$t5; dd @$t5 L4; .printf \\\\\\\"[CDB_WRITE_DUMP]\\\\\\\"; db @$t5 L20; .printf \\\\\\\"[CDB_WRITE_SEARCH_ASCII]\\\\\\\"; s -a @$t5 L20 \\\\\\\"TBL_41414141\\\\\\\"; .printf \\\\\\\"[CDB_WRITE_SEARCH_HEX]\\\\\\\"; s -b @$t5 L20 54 42 4C 5F 34 31 34 31 34 31 34 31; gc\\\" }; gc\" } } }; gc"
+bu ntdll!RtlAllocateHeap ".if (@$t2 != 0) { .if (@$t4 == 0) { r @$t13=0; .if (@r8 == 0x10) { r @$t13=1 }; .if (@r8 == 0x20) { r @$t13=1 }; .if (@r8 == 0x30) { r @$t13=1 }; .if (@r8 == 0x40) { r @$t13=1 }; .if (@r8 == 0x50) { r @$t13=1 }; .if (@r8 == 0x60) { r @$t13=1 }; .if (@$t13 != 0) { r @$t8=poi(@rsp); r @$t9=@r8; r @$t10=@rcx; r @$t11=@rdx; r @$t12=poi(@rsp); bp /1 @$t8 \".if (@$t6 < __TRACE_COUNT__) { r @$t6=@$t6+1; .printf \\\"\\n[CDB_POST_PAYLOAD_ALLOC_RETURN] index=%d ret=%p payload=%p delta=%p size=%p heap=%p flags=%p caller=%p tid=%x sizes=0x10,0x20,0x30,0x40,0x50,0x60\\\\n\\\", @$t6, @rax, @$t2, (@rax-@$t2), @$t9, @$t10, @$t11, @$t12, @$tid; .if (@$t9 == 0x20) { .printf \\\"[CDB_POST_PAYLOAD_ALLOC20_RETURN] index=%d ret=%p payload=%p delta=%p size=0x20 heap=%p flags=%p caller=%p tid=%x\\\\n\\\", @$t6, @rax, @$t2, (@rax-@$t2), @$t10, @$t11, @$t12, @$tid }; .if (@$t14 < __STACK_COUNT__) { .if (@$t9 == 0x20) { .if (@$t12 == 0x00007ffeaa6850d9) { r @$t14=@$t14+1; .printf \\\"[CDB_FRIDA_MATCHED_ALLOC20_RETURN] index=%d targetIndex=%d ret=%p payload=%p delta=%p size=0x20 heap=%p flags=%p caller=0x00007ffeaa6850d9 tid=%x\\\\n\\\", @$t6, @$t14, @rax, @$t2, (@rax-@$t2), @$t10, @$t11, @$tid; .printf \\\"[CDB_FRIDA_MATCHED_ALLOC20_STACK]\\\\n\\\"; kb } } }; .if (@$t15 < __STACK_COUNT__) { .if (@$t9 == 0x30) { .if (@$t12 == 0x00007ffe4bed4a57) { r @$t15=@$t15+1; .printf \\\"[CDB_NEAR_MISS_ALLOC30_RETURN] index=%d targetIndex=%d ret=%p payload=%p delta=%p size=0x30 heap=%p flags=%p caller=0x00007ffe4bed4a57 tid=%x\\\\n\\\", @$t6, @$t15, @rax, @$t2, (@rax-@$t2), @$t10, @$t11, @$tid; .printf \\\"[CDB_NEAR_MISS_ALLOC30_STACK]\\\\n\\\"; kb } } }; .if (@$t6 <= __STACK_COUNT__) { .printf \\\"[CDB_POST_PAYLOAD_ALLOC_STACK]\\\\n\\\"; kb }; .if (@$t6 >= __TRACE_COUNT__) { .printf \\\"[CDB_ALLOC_DIAG_COMPLETE] count=%d sizes=0x10,0x20,0x30,0x40,0x50,0x60\\\\n\\\", @$t6 } }; .if (@rax == @$t2) { r @$t4=1; r @$t5=@rax; bd 5; .printf \\\"\\n============================================================\\n\\\"; .printf \\\"[CDB_EXACT_REUSE_RUNTIME] RtlAllocateHeap returned freed payload ptr=%p size=%p\\\\n\\\", @rax, @$t9; .printf \\\"============================================================\\n\\\"; .printf \\\"[CDB_STACK]\\\\n\\\"; kb; .printf \\\"[CDB_REUSE_INITIAL_DUMP]\\n\\\"; db @rax L20; .printf \\\"[CDB_SETTING_WATCH_ON_REUSED_SLOT]\\n\\\"; ba w4 @$t5 \\\".printf \\\\\\\"[CDB_WRITE_TO_REUSED_SLOT] Write at %p, data: \\\\\\\", @$t5; dd @$t5 L4; .printf \\\\\\\"[CDB_WRITE_DUMP]\\\\\\\"; db @$t5 L20; .printf \\\\\\\"[CDB_WRITE_SEARCH_ASCII]\\\\\\\"; s -a @$t5 L20 \\\\\\\"TBL_41414141\\\\\\\"; .printf \\\\\\\"[CDB_WRITE_SEARCH_HEX]\\\\\\\"; s -b @$t5 L20 54 42 4C 5F 34 31 34 31 34 31 34 31; gc\\\" }; gc\" } } }; gc"
 '@.Trim().
         Replace("__TRACE_COUNT__", [string]$PostPayloadAllocTraceCount).
         Replace("__STACK_COUNT__", [string]$PostPayloadAllocStackCount)
@@ -1158,6 +1158,11 @@ bu ntdll!RtlAllocateHeap ".if (@$t2 != 0) { .if (@$t4 == 0) { r @$t13=0; .if (@r
         'r @$t5 = 0',
         'r @$t6 = 0',
         'r @$t13 = 0',
+        'r @$t14 = 0',
+        'r @$t15 = 0',
+        'r @$t16 = 0',
+        'r @$t17 = 0',
+        'r @$t18 = 0',
         '',
         '.echo [CDB] breakpoints installing...',
         '',
@@ -1463,6 +1468,8 @@ catch {
 
     $allocDiagProgressPatterns = $deepProgressPatterns + @(
         "CDB_POST_PAYLOAD_ALLOC_RETURN",
+        "CDB_FRIDA_MATCHED_ALLOC20_RETURN",
+        "CDB_NEAR_MISS_ALLOC30_RETURN",
         "CDB_ALLOC_DIAG_COMPLETE"
     )
 

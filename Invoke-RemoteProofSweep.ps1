@@ -36,6 +36,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
 if ($null -eq $Credential) {
     $Credential = Get-Credential -Message "Credential for $ComputerName"
@@ -61,6 +62,7 @@ function Copy-ProofScripts {
 
     Invoke-Command -Session $Session -ScriptBlock {
         param([string]$Directory)
+        $ProgressPreference = "SilentlyContinue"
         New-Item -ItemType Directory -Force $Directory | Out-Null
         New-Item -ItemType Directory -Force (Join-Path $Directory "tests") | Out-Null
         New-Item -ItemType Directory -Force (Join-Path $Directory "tools\preview") | Out-Null
@@ -71,6 +73,7 @@ function Copy-ProofScripts {
 
     foreach ($relativePath in @(
         "AGENTS.md",
+        "Invoke-RemoteProofSweep.ps1",
         "run-proof.ps1",
         "tools\preview\Invoke-PreviewTrigger.ps1",
         "tools\preview\trigger-preview.ps1",
@@ -105,6 +108,7 @@ function Invoke-RemoteAttempt {
             [int]$RemoteRunIndex
         )
 
+        $ProgressPreference = "SilentlyContinue"
         $runStamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $taskName = "ProofRemote-$RemoteRunIndex-$runStamp"
         $runnerPath = Join-Path $Directory "scripts\proof-remote-run-$RemoteRunIndex-$runStamp.ps1"
@@ -254,14 +258,28 @@ function Invoke-RemoteAttempt {
             return (($match.Line -replace "\s+", " ").Trim())
         }
 
+        function Test-RemoteRuntimeEventLine {
+            param([string]$Line)
+
+            return (
+                $Line -match '\[CDB_' -and
+                $Line -notmatch '^\s*0:\d+>' -and
+                $Line -notmatch '^CDB PROOF' -and
+                $Line -notmatch 'bu\s+(wwlib|ntdll)' -and
+                $Line -notmatch '\.echo' -and
+                $Line -notmatch 'Numeric expression missing'
+            )
+        }
+
         New-Item -ItemType Directory -Force (Join-Path $Directory "scripts") | Out-Null
         New-Item -ItemType Directory -Force (Join-Path $Directory "results") | Out-Null
         Remove-Item -LiteralPath $donePath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $runSummaryPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $runRankingPath -Force -ErrorAction SilentlyContinue
 
-        @"
+@"
 `$ErrorActionPreference = "Continue"
+`$ProgressPreference = "SilentlyContinue"
 try {
     cd "$Directory"
     .\tools\maintenance\clean-proof-state.ps1 *> "$outputPath"
@@ -350,10 +368,12 @@ finally {
 
         $eventLines = @()
         if ($lastLogPath) {
+            $eventPattern = "CDB_POST_PAYLOAD_ALLOC_RETURN|CDB_POST_PAYLOAD_ALLOC20_RETURN|CDB_FRIDA_MATCHED_ALLOC20_RETURN|CDB_FRIDA_MATCHED_ALLOC20_STACK|CDB_NEAR_MISS_ALLOC30_RETURN|CDB_NEAR_MISS_ALLOC30_STACK|CDB_PAYLOAD_RELEASE_ENTER|CDB_PAYLOAD_RELEASE_STACK|CDB_PAYLOAD_AFTER|CDB_BAD_CLEANUP_RET|CDB_EXACT_REUSE_RUNTIME|CDB_WRITE_TO_REUSED_SLOT"
             $eventLines = @(
-                Select-String -Path $lastLogPath -Pattern "CDB_POST_PAYLOAD_ALLOC_RETURN|CDB_POST_PAYLOAD_ALLOC20_RETURN|CDB_PAYLOAD_RELEASE_ENTER|CDB_PAYLOAD_RELEASE_STACK|CDB_PAYLOAD_AFTER|CDB_BAD_CLEANUP_RET|CDB_EXACT_REUSE_RUNTIME|CDB_WRITE_TO_REUSED_SLOT" |
-                    Select-Object -Last 300 |
-                    ForEach-Object { $_.Line }
+                Get-Content $lastLogPath -ErrorAction SilentlyContinue |
+                    Where-Object { Test-RemoteRuntimeEventLine -Line $_ } |
+                    Where-Object { $_ -match $eventPattern } |
+                    Select-Object -Last 300
             )
         }
 
@@ -408,6 +428,7 @@ try {
 
     Invoke-Command -Session $session -ScriptBlock {
         param([string]$Directory)
+        $ProgressPreference = "SilentlyContinue"
         cd $Directory
         & .\tests\RunProof.Static.Tests.ps1
         & .\tests\RemoteProofSweep.Static.Tests.ps1

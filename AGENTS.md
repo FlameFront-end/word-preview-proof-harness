@@ -130,12 +130,33 @@ No exact reuse/write/marker has been observed yet, but `spray=474` now has the s
 - 2026-07-07 micro-sweep `spray=473,474,475`: `spray=474` again dominated. One run reached `0x20` allocation at `payload-0x3810`, plus `0x40` allocations at `payload-0xc320`/`payload-0xbb50` and `0x30` at `payload+0x2324b0`. This is the closest passive proximity observed so far, but it is still not exact reuse.
 - Other useful `spray=474` runs showed `0x40` closest deltas around `0x84090`, `0x119fe0`, and `0x198f60`, plus `0x30` pressure.
 - Aggregate local reports confirm the top near-misses are all `spray=474`: `0x3810`, `0x21100`, `0x2c5e0`, `0x68f40`, and `0x9e610` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
-- As of the 2026-07-07 `remote-proof-20260707-191538` batch, there are 31 valid focused `spray=474` root-cause runs without exact reuse/write/marker. The old `spray=400` reported success is a known pre-fix false positive and must not be counted.
+- As of the 2026-07-07 `remote-proof-20260707-222252` batch, there are 45 valid focused `spray=474` root-cause runs without exact reuse/write/marker. The old `spray=400` reported success is a known pre-fix false positive and must not be counted.
+- Near-miss aggregate artifacts are in `remote-results\near-miss-analysis-20260707-232117`: 624 allocation events and 75 per-run best rows.
+- Current near-miss clusters:
+  - best single miss: `0x20` at `payload-0x3810`, caller `0x00007ffe4bed4a57`, thread `0x476c`, heap `0x000001865cd70000`.
+  - stable frequent cluster: `0x30` from caller `0x00007ffe4bed4a57`, with best `payload-0x21100`.
+  - secondary `0x20` cluster: caller `0x00007ffeaa6850d9`, with best `payload-0x21100`.
+  - rare `0x40` close misses include dynamic-looking callers such as `0x000001865e521648`; symbolize or compare with stacks before treating them as stable code callers.
 - `spray=475` is no longer a good secondary candidate unless new diagnostics change the hypothesis; recent runs either fail at preview-trigger or remain much farther from the freed payload than `474`.
 - `spray=474` has intermittent scheduled-task/CDB startup failures; the remote wrapper records these as failed rows and continues.
 
 Frida can force or guide reuse and is useful for learning call stacks, allocator size, heap/thread constraints, and candidate timing.
 Frida success does not by itself prove passive DOCX-only natural reuse.
+
+Fresh Frida diagnostic from 2026-07-07 is saved locally in `remote-results\frida-diagnostic-20260707-132749`.
+It used `poc-run-attempt-0008-t2000-20260707-020135.docx` and produced a marker write:
+
+- `PAYLOAD_SIZE=0x20` in `tools\frida\frida-placement.js`.
+- freed payload: `0x1f506285f20`
+- freed heap: `0x1f56e310000`
+- freed thread: decimal `7376` / hex `0x1cd0`
+- Frida learned `MALLOC_BASE` at `0x7ffeaa6850d9`.
+- forced allocation line: `RtlAllocateHeap(size=0x20) original ret=0x1f505d927b0, forcing reuse of 0x1f506285f20`.
+- original natural return in that Frida run was `payload-0x4f3770`; Frida forced it to exact reuse and wrote marker `TBL_41414141`.
+
+This directly matches the passive CDB near-miss caller `0x00007ffeaa6850d9` for `size=0x20`.
+The best passive CDB rows for that Frida-matched caller are `payload-0x21100` and `payload+0x2c5e0`.
+Therefore the next diagnostic target is the `0x20`/`0x00007ffeaa6850d9` path, not broad all-size repetition.
 
 ## Important Current Code Behavior
 
@@ -152,11 +173,17 @@ Current diagnostics include:
 - post-payload allocation lines with size, heap, flags, caller, thread id, return pointer, payload pointer, and delta.
 - one `CDB_PAYLOAD_RELEASE_STACK` stack capture at payload release.
 - bounded allocation stack capture controlled by `PostPayloadAllocStackCount`.
+- targeted post-release allocation stack capture for:
+  - `CDB_FRIDA_MATCHED_ALLOC20_RETURN` / `CDB_FRIDA_MATCHED_ALLOC20_STACK`: `size=0x20`, caller `0x00007ffeaa6850d9`.
+  - `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`: `size=0x30`, caller `0x00007ffe4bed4a57`.
+  These targeted stacks are bounded by `PostPayloadAllocStackCount` but are not limited to the first global allocation events, so late target hits such as allocation index 14-15 are captured.
 - all-size post-payload allocation ranking: `BestPostPayloadAllocDelta` and closest positive/negative/absolute fields are based on all monitored sizes, not only legacy `0x20` events.
 - spray duration and tables/sec in attempt summaries.
 - preview trigger `Initialize hr`, exit code, and exit state in attempt summaries.
 - remote Scheduled Task result metadata and timeout/crash diagnostics in remote reports.
 - remote wrapper report tails: `RemoteOutputTail`, `RemoteErrorTail`, `LastTriggerStage`, and `LastHarnessError`.
+- `Invoke-RemoteProofSweep.ps1` suppresses PowerShell progress in local, remote, and Scheduled Task contexts to avoid WinRM/CLIXML noise breaking local result collection after a proof run has already completed.
+- `Invoke-RemoteProofSweep.ps1` filters `remote-proof-events.log` to real runtime CDB event lines. Do not export raw `Select-String` matches from CDB logs because breakpoint command text contains proof tag names.
 
 Remote attempts now write unique per-run summary/ranking files:
 
@@ -165,6 +192,7 @@ Remote attempts now write unique per-run summary/ranking files:
 
 This avoids accidentally reading stale rows from the shared `results\attempt-summary.csv`.
 
+`Copy-ProofScripts` must sync `Invoke-RemoteProofSweep.ps1` itself to the VM so remote static validation checks the same wrapper code that is running locally.
 `Invoke-RemoteProofSweep.ps1 -StopOnExactReuse` must stop the whole sweep, not just the inner repeat loop.
 `Invoke-RemoteProofSweep.ps1` has a default bounded cooldown between runs via `-DelayBetweenRunsSeconds` to reduce back-to-back Scheduled Task/CDB startup instability.
 After `FailureKind=scheduled-task`, `Invoke-RemoteProofSweep.ps1` can use the longer `-ScheduledTaskFailureDelaySeconds` cooldown because recent `powershell.exe` `0xc0000005` startup crashes happened before stdout/stderr were created and repeated quickly with short pauses.
@@ -267,7 +295,7 @@ Keep this plan updated after each completed step. If a step changes the evidence
    - `AGENTS.md`
 
 4. Current best passive candidate is `spray=474`.
-   Prefer repeated bounded `allocdiag` runs on `spray=474` before returning to broader ranges. Use `-ScheduledTaskFailureDelaySeconds 300` for unattended sweeps. The strongest observed near-miss is `0x20` at `payload-0x3810`.
+   After 49 valid focused root-path runs without exact reuse/write/marker, do not keep running identical blind `spray=474` batches as the next default step. The strongest observed near-miss is still `0x20` at `payload-0x3810`; use that evidence to compare against Frida controlled-reuse diagnostics.
 
 5. Rank candidates by:
    - exact reuse/write/marker first
@@ -279,7 +307,9 @@ Keep this plan updated after each completed step. If a step changes the evidence
 6. Run deep confirmation only after `allocdiag` produces exact reuse/write/marker, or repeatedly shows sub-megabyte allocator proximity on the same size/caller.
    Do not spend long deep runs on candidates that do not improve allocator diagnostics.
 
-7. If no candidate improves allocator diagnostics, use Frida logs to identify the allocator size/caller/thread after payload release and adjust passive diagnostics before running another overnight sweep.
+7. Next diagnostic step: obtain or run a Frida controlled-reuse log and compare allocation size, heap, thread, caller/stack, and timing against `remote-results\near-miss-analysis-20260707-232117`.
+   This has now identified `0x20` caller `0x00007ffeaa6850d9` as the Frida-matched path, and `run-proof.ps1` now has targeted CDB stack diagnostics for it. Next passive run should use `ObserveMode allocdiag` and a nonzero `PostPayloadAllocStackCount` to collect those target stacks before another overnight sweep.
+   The 2026-07-08 focused batch confirmed the `0x30` near-miss targeted stack path, but not the Frida-matched `0x20` path. The `0x30` stack is UI/ribbon/AirSpace related and far from payload in that run, so do not treat it as the main proof path unless it becomes close again.
 
 8. For overnight runs, prefer many bounded attempts over one very long attempt.
    Current practical shape: repeated `deep` attempts of 10-15 minutes on narrowed candidates, stopping on exact reuse.
@@ -296,6 +326,8 @@ After every proof run or code change:
 ## Current Risks
 
 - CDB command syntax for the any-size exact-reuse detector must be verified in a real VM run after syncing the latest local files.
+- WinRM/PowerShell progress streams can corrupt local wrapper result collection with CLIXML noise. Keep `$ProgressPreference = "SilentlyContinue"` in local, remote, and Scheduled Task runner contexts.
+- Scheduled Task / Office startup failures remain common in batches. Recent failures included `0xc0000005` and `0xc0000142`. Treat those rows as invalid proof attempts and consider launcher stabilization before larger unattended sweeps.
 - Frida proves controllability, not passive reuse.
 - Shared result files can be stale; prefer unique per-run summaries from the fixed remote wrapper.
 - Word COM is unreliable from non-interactive WinRM; use Scheduled Tasks for remote proof runs.

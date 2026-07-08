@@ -159,6 +159,19 @@ Assert-NotContains $scriptText 'CDB_POST_PAYLOAD_ALLOC20_STACK' "Generic allocat
 Assert-Contains $scriptText 'CDB_POST_PAYLOAD_ALLOC_RETURN' "Multi-size post-payload allocation diagnostic tag is missing"
 Assert-Contains $scriptText 'CDB_ALLOC_DIAG_COMPLETE' "Allocdiag completion tag is missing"
 Assert-Contains $scriptText 'heap=%p flags=%p caller=%p tid=%x' "Post-payload allocation diagnostics do not include heap, flags, caller, and thread"
+Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_RETURN' "Frida-matched 0x20 allocation target diagnostic tag is missing"
+Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_STACK' "Frida-matched 0x20 allocation stack diagnostic tag is missing"
+Assert-Contains $scriptText '0x00007ffeaa6850d9' "Frida-matched 0x20 allocation caller is not targeted"
+Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_RETURN' "Near-miss 0x30 allocation target diagnostic tag is missing"
+Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_STACK' "Near-miss 0x30 allocation stack diagnostic tag is missing"
+Assert-Contains $scriptText '0x00007ffe4bed4a57' "Near-miss 0x30 allocation caller is not targeted"
+Assert-Contains $scriptText 'r\s+@\$t14\s*=\s*0' "Frida-matched allocation stack counter is not initialized"
+Assert-Contains $scriptText 'r\s+@\$t15\s*=\s*0' "Near-miss allocation stack counter is not initialized"
+$rtlAllocateHeapBreakpointCount = [regex]::Matches($scriptText, 'bu\s+ntdll!RtlAllocateHeap').Count
+if ($rtlAllocateHeapBreakpointCount -ne 1) {
+    throw "run-proof.ps1 must keep a single RtlAllocateHeap breakpoint; duplicate breakpoints redefine CDB breakpoint 5"
+}
+Assert-NotContains $scriptText 'be 5;\s*be 7' "Payload release enables a duplicate targeted RtlAllocateHeap breakpoint"
 Assert-NotContains $scriptText '@\$\w+\s*==\s*0x20[\s\S]{0,300}CDB_EXACT_REUSE_RUNTIME' "Exact reuse detector is still restricted to 0x20 allocations"
 Assert-NotContains $scriptText '@r8\s*==\s*0x10\s*\|\|' "CDB allocation size filter uses unsupported || syntax"
 Assert-Contains $scriptText "Numeric expression missing" "Runtime parser does not exclude CDB syntax error lines from evidence"

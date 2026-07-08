@@ -32,6 +32,7 @@ Assert-Contains $scriptText '\[pscredential\]\$Credential' "Credential parameter
 Assert-Contains $scriptText '\[int\[\]\]\$SprayCounts\s*=\s*@\(2000,\s*10000\)' "SprayCounts default is missing"
 Assert-Contains $scriptText 'New-PSSession' "Remote session creation is missing"
 Assert-Contains $scriptText 'Copy-Item[\s\S]*-ToSession' "Script copy to VM is missing"
+Assert-Contains $scriptText '"Invoke-RemoteProofSweep\.ps1"' "Remote sweep script is not copied to the VM for remote static validation"
 Assert-Contains $scriptText 'tests\\RemoteProofSweep\.Static\.Tests\.ps1' "Remote sweep static test is not copied to the VM"
 Assert-Contains $scriptText 'Register-ScheduledTask' "Interactive scheduled task registration is missing"
 Assert-Contains $scriptText 'Start-ScheduledTask' "Interactive scheduled task start is missing"
@@ -44,6 +45,12 @@ Assert-Contains $scriptText 'LastTriggerStage' "Remote report is missing Preview
 Assert-Contains $scriptText 'LastHarnessError' "Remote report is missing harness error diagnostics"
 Assert-Contains $scriptText 'function\s+Get-RemoteTextTail' "Remote sweep does not have a reusable remote log tail helper"
 Assert-Contains $scriptText 'function\s+Get-LastRemotePatternLine' "Remote sweep does not have a reusable pattern extraction helper"
+Assert-Contains $scriptText 'function\s+Test-RemoteRuntimeEventLine' "Remote event export does not filter CDB command text from runtime events"
+Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_RETURN' "Remote event export is missing Frida-matched allocation diagnostics"
+Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_RETURN' "Remote event export is missing near-miss allocation diagnostics"
+Assert-Contains $scriptText 'Where-Object\s*\{\s*Test-RemoteRuntimeEventLine\s+-Line\s+\$_\s*\}' "Remote event export does not apply runtime-event filtering"
+Assert-Contains $scriptText '\$Line\s+-notmatch\s+''bu\\s\+\(wwlib\|ntdll\)''' "Remote runtime-event filtering does not exclude CDB breakpoint command text"
+Assert-Contains $scriptText '\$Line\s+-notmatch\s+''Numeric expression missing''' "Remote runtime-event filtering does not exclude CDB syntax error text"
 Assert-Contains $scriptText 'LastWriteTime\s+-ge\s+\$taskStartedAt\.AddSeconds\(-5\)' "Remote CDB log fallback does not constrain logs to the current run"
 Assert-Contains $scriptText 'Write-RemoteFailureDiagnostics' "Remote sweep does not collect diagnostics when scheduled task completion fails"
 Assert-Contains $scriptText 'New-RemoteTaskFailureResult' "Remote sweep does not synthesize a failed result for crashed scheduled tasks"
@@ -71,5 +78,9 @@ Assert-Contains $scriptText 'Start-Sleep\s+-Seconds\s+\$cooldownSeconds' "Remote
 Assert-Contains $scriptText '&\s+\.\\tests\\RemoteProofSweep\.Static\.Tests\.ps1' "Remote validation does not run RemoteProofSweep.Static.Tests.ps1 on the VM"
 Assert-Contains $scriptText '\$shouldStopSweep\s*=\s*\$false' "Remote sweep does not track StopOnExactReuse across all spray groups"
 Assert-Contains $scriptText 'if\s*\(\$shouldStopSweep\)\s*\{\s*break\s*\}' "Remote sweep does not break the outer spray loop after StopOnExactReuse"
+$progressPreferenceCount = [regex]::Matches($scriptText, '\$ProgressPreference\s*=\s*"SilentlyContinue"').Count
+if ($progressPreferenceCount -lt 4) {
+    throw "Remote sweep must suppress progress in local, remote, and scheduled-task contexts to avoid WinRM CLIXML noise"
+}
 
 Write-Host "Static remote proof sweep checks passed"

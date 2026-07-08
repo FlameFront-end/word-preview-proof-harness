@@ -167,8 +167,21 @@ cd C:\Development\test\cve-ps1
 - Aggregate local report ranking confirms the top near-misses are all `spray=474`: `0x3810`, `0x2c5e0`, `0x68f40`, `0x9e610`, and `0xbe760` absolute distance. Nearest non-474 candidates are much worse (`476` about `0x1e3a60`, `475` about `0x41c060`, `473` about `0x4ea9d0`).
 - Two follow-up `spray=474` batches added 8 more valid root-cause runs and 2 failed starts (`preview-trigger` once, `scheduled-task` once). Exact reuse/write/marker was not observed.
 - The second follow-up batch produced a new second-best near-miss: `0x20` and `0x30` allocations at `payload-0x21100` (`135424` bytes). This does not beat the best `payload-0x3810`, but confirms `spray=474` still repeatedly produces close allocator placement.
-- Current local count is 31 valid `spray=474` root-cause runs after fixes/focused sweeps; the old `spray=400` reported success remains a known false positive and must not be counted.
-- Next action: continue bounded `allocdiag` batches on `spray=474` with `-ScheduledTaskFailureDelaySeconds 300`. Do not widen until `474` stops reaching the root-cause path or a new Frida/CDB diagnostic changes the hypothesis.
+- Current local count is 45 valid `spray=474` root-cause runs after fixes/focused sweeps; the old `spray=400` reported success remains a known false positive and must not be counted.
+- Near-miss aggregate artifacts are in `remote-results\near-miss-analysis-20260707-232117`. They include 624 allocation events and 75 per-run best rows.
+- The best passive miss remains `0x20` at `payload-0x3810` from caller `0x00007ffe4bed4a57`. Other important clusters are `0x30` from caller `0x00007ffe4bed4a57` and `0x20` from caller `0x00007ffeaa6850d9`, both reaching `payload-0x21100`.
+- After 45 valid focused runs without exact reuse/write/marker, more identical blind `spray=474` batches have reduced value. Next action is to compare these passive CDB caller/size/thread/heap patterns against a Frida controlled-reuse log before widening or running another overnight passive sweep.
+- Fresh Frida diagnostic `remote-results\frida-diagnostic-20260707-132749` used the current `attempt 8 / t2000` DOCX and forced marker write. It learned `MALLOC_BASE=0x7ffeaa6850d9`, freed `0x20` payload `0x1f506285f20`, then observed `RtlAllocateHeap(size=0x20) original ret=0x1f505d927b0` before forcing reuse and writing `TBL_41414141`.
+- This matches the passive CDB near-miss caller `0x00007ffeaa6850d9` for `size=0x20`. The best passive rows for that Frida-matched path are `payload-0x21100` and `payload+0x2c5e0`, so the next passive diagnostic should target stacks/timing for `0x20` caller `0x00007ffeaa6850d9`.
+- Code update: `run-proof.ps1` now adds targeted CDB diagnostics for `0x20` caller `0x00007ffeaa6850d9` and `0x30` caller `0x00007ffe4bed4a57`. The tags are `CDB_FRIDA_MATCHED_ALLOC20_RETURN`, `CDB_FRIDA_MATCHED_ALLOC20_STACK`, `CDB_NEAR_MISS_ALLOC30_RETURN`, and `CDB_NEAR_MISS_ALLOC30_STACK`. These stacks are bounded by `PostPayloadAllocStackCount` but are not limited to the first global allocation events.
+- Control run after that code update reached `HasBadCleanup=True` and `HasPayloadRelease=True` with no exact reuse/write/marker. It confirmed the duplicate `RtlAllocateHeap` breakpoint bug is fixed: there was only one `bu ntdll!RtlAllocateHeap` and no `breakpoint 5 redefined`. The run itself was a weak allocator sample: best `0x20` delta was `payload+0x12ad0260`.
+- The same control run exposed an orchestration/reporting defect: the proof finished on the VM, but the local wrapper did not write a normal report because PowerShell progress/CLIXML noise broke result collection. `Invoke-RemoteProofSweep.ps1` now suppresses progress in local, remote, and Scheduled Task contexts; the next short run should verify local report creation.
+- Sync fix: `Invoke-RemoteProofSweep.ps1` is now copied to the VM as part of `Copy-ProofScripts`, so VM-side static validation checks the current wrapper instead of a stale copy.
+- Follow-up batch `remote-results\remote-proof-20260708-002444` ran 6 attempts on `spray=474`: 4 valid root-cause/no-success runs and 2 invalid Scheduled Task startup failures (`0xc0000005`, `0xc0000142`). Exact reuse/write/marker was not observed.
+- The batch confirmed targeted `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK` works. The captured `0x30` stack is `mso20win32client!Mso::Memory::AllocateEx -> mso40uiwin32client!AirSpace::BatchCommand::Create -> AirSpace::FrontEnd::Scene::BeginBatch -> NetUI::DeferCycle::StartDefer -> ... -> wwlib!PitbsCreateAndReadBuiltinOtbs`.
+- That `0x30` hit was far from payload (`+0x845b3c0`), and best all-size allocation in the run was `0x40` at `+0x4819db0`. This does not improve the passive proximity hypothesis.
+- `CDB_FRIDA_MATCHED_ALLOC20_RETURN` did not appear in the batch. The Frida-matched `0x20` path remains unconfirmed in passive CDB after the targeted diagnostic change.
+- Wrapper event export was fixed after the batch: `remote-proof-events.log` now filters to real runtime CDB event lines and excludes breakpoint command text, because proof tag names appear in the `bu ntdll!RtlAllocateHeap` command itself.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall
 
@@ -177,8 +190,13 @@ cd C:\Development\test\cve-ps1
 - Read: Frida output logs copied by the user.
 - Modify: CDB diagnostics in `run-proof.ps1` only if Frida evidence shows a missing size/caller/timing class.
 
-- [ ] Compare Frida reuse stack/caller with passive CDB allocation events.
-- [ ] Identify whether passive diagnostics are missing allocator size, heap, thread, or timing.
-- [ ] Add only the smallest diagnostic needed to test that hypothesis.
-- [ ] Write a failing static test before changing the diagnostic tags or CDB command shape.
-- [ ] Update this plan after the next passive run.
+- [x] Obtain or run a Frida controlled-reuse log that includes allocation size, heap, thread, caller/stack, and marker/write timing.
+- [x] Compare Frida reuse stack/caller with passive CDB allocation events from `remote-results\near-miss-analysis-20260707-232117`.
+- [x] Identify whether passive diagnostics are missing allocator size, heap, thread, or timing.
+- [x] Add only the smallest diagnostic needed to test that hypothesis.
+- [x] Write a failing static test before changing the diagnostic tags or CDB command shape.
+- [x] Update this plan after the next passive run.
+- [x] Verify `Invoke-RemoteProofSweep.ps1` writes local CSV/report cleanly after progress suppression.
+- [x] Verify targeted `0x30` stack capture can fire in a real VM run.
+- [ ] Verify `remote-proof-events.log` no longer includes breakpoint command text after runtime-event filtering.
+- [ ] Stabilize Scheduled Task / Office startup failures before any larger unattended sweep.
