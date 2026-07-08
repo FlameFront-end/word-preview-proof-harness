@@ -182,6 +182,17 @@ cd C:\Development\test\cve-ps1
 - That `0x30` hit was far from payload (`+0x845b3c0`), and best all-size allocation in the run was `0x40` at `+0x4819db0`. This does not improve the passive proximity hypothesis.
 - `CDB_FRIDA_MATCHED_ALLOC20_RETURN` did not appear in the batch. The Frida-matched `0x20` path remains unconfirmed in passive CDB after the targeted diagnostic change.
 - Wrapper event export was fixed after the batch: `remote-proof-events.log` now filters to real runtime CDB event lines and excludes breakpoint command text, because proof tag names appear in the `bu ntdll!RtlAllocateHeap` command itself.
+- Follow-up short filtering check `remote-results\remote-proof-20260708-105754` ran 2 attempts on `spray=474`. RUN 1 did not reach root-cause. RUN 2 reached `HasBadCleanup=True` and `HasPayloadRelease=True`, but exact reuse/write/marker was not observed.
+- RUN 2 produced one post-release `0x20` allocation at `payload+0x121bc860`, caller `0x00007ff8a9cd50d9`. This is weak and does not match the Frida-matched caller `0x00007ffeaa6850d9`.
+- `CDB_FRIDA_MATCHED_ALLOC20_RETURN` and `CDB_NEAR_MISS_ALLOC30_RETURN` did not appear in this run.
+- The runtime-event export filter is now verified on real runtime lines: `remote-proof-events.log` contains payload-release/bad-cleanup/post-allocation lines and excludes CDB breakpoint command text, `.echo`, `Numeric expression missing`, and `CDB PROOF` banner lines.
+- Scheduled Task / Office startup failures were investigated against existing reports and VM Application/WER logs. The failures are not isolated to one wrapper error: the same windows include APPCRASH records for `powershell.exe`, `cmd.exe`, `taskkill.exe`, `WINWORD.EXE`, `cdb.exe`, and Office helper processes.
+- A narrow cleanup-risk reduction was implemented: `tools\maintenance\clean-proof-state.ps1` no longer launches `cmd.exe /c taskkill`, because those external helpers have themselves crashed with `0xc0000005`. Cleanup now relies on PowerShell-native `Stop-Process`.
+- Follow-up bounded batch `remote-results\remote-proof-20260708-112255` completed 2/2 Scheduled Tasks with `TaskLastTaskResult=0`, so the cleanup change did not break the runner and no startup crash occurred in that small sample.
+- Both runs reached `HasBadCleanup=True` and `HasPayloadRelease=True`, but no exact reuse/write/marker. RUN 1 produced one `0x30` allocation at `payload-0x8246f90`, caller `0x00007ff895534a57`.
+- That caller revealed an ASLR bug in targeted diagnostics: it is the same `mso20win32client+0x2a4a57` path as old `0x00007ffe4bed4a57`, but the absolute address changed after restart. `run-proof.ps1` now targets `mso20win32client+0x2a4a57` for near-miss `0x30` and `mso20win32client+0x2a50d9` for Frida-matched `0x20`.
+- Verification batch `remote-results\remote-proof-20260708-114636` confirmed the module-relative CDB command installs in a real run, but did not hit either targeted caller. RUN 2 was a valid root-cause/no-success sample with 13 far `0x20` post-release allocations at `payload-0x18074a90`; the caller was a different path around `AppVIsvSubsystems64` / registry query.
+- The same batch also showed Scheduled Task instability persists: RUN 3 failed before stdout/stderr with `TaskLastTaskResult=3221225477` (`0xc0000005`), and diagnostics captured a `powershell.exe` APPCRASH in WER bucket `abd12585cd6c663009fe454baedf0a0b`.
 
 ## Task 5: Use Frida Only For Diagnostics If Passive Runs Stall
 
@@ -198,5 +209,14 @@ cd C:\Development\test\cve-ps1
 - [x] Update this plan after the next passive run.
 - [x] Verify `Invoke-RemoteProofSweep.ps1` writes local CSV/report cleanly after progress suppression.
 - [x] Verify targeted `0x30` stack capture can fire in a real VM run.
-- [ ] Verify `remote-proof-events.log` no longer includes breakpoint command text after runtime-event filtering.
+- [x] Verify `remote-proof-events.log` no longer includes breakpoint command text after runtime-event filtering.
 - [ ] Stabilize Scheduled Task / Office startup failures before any larger unattended sweep.
+  - [x] Remove `cmd.exe / taskkill.exe` from `clean-proof-state.ps1` to reduce avoidable external process crashes during Scheduled Task startup cleanup.
+  - [x] Re-test failure rate with a small bounded batch before any larger unattended sweep.
+- [x] Verify module-relative targeted diagnostics in a real run that hits `mso20win32client+0x2a4a57` or `mso20win32client+0x2a50d9`.
+  - 2026-07-08 focused batch `remote-results\remote-proof-20260708-121407` hit `mso20win32client+0x2a4a57` in RUN 1 and emitted `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`.
+  - That hit was not close enough for proof: `0x30` returned `payload+0x4763b0`.
+  - Stack: `mso20win32client!Mso::Memory::AllocateEx -> wwlib!operator new -> wwlib!PobjxCreate -> wwlib!PwwserverdocCreate -> wwlib!WWSERVEROBJ::Initialize -> RPCRT4`.
+  - `mso20win32client+0x2a50d9` still has not appeared in passive CDB after the module-relative fix.
+  - Batch quality was poor: 2 valid root-cause/no-success runs out of 6, with 3 Scheduled Task `0xc0000005` failures and 1 preview-trigger failure. Do not run another identical `spray=474` batch as the next default step.
+- [ ] Decide the next non-identical step before more passive batches: either stabilize the Scheduled Task/PowerShell startup path, or change allocator-pressure/timing diagnostics to specifically target the still-missing `mso20win32client+0x2a50d9` Frida-matched path.

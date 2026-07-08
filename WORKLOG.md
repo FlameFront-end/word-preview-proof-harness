@@ -112,3 +112,63 @@ Proof-run не запускался.
 - Синхронизированы 11 файлов на `C:\CVELAB\final`, включая `Invoke-RemoteProofSweep.ps1`, `run-proof.ps1`, static tests, preview/frida/maintenance helpers, `AGENTS.md` и план.
 - На VM прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks для `run-proof.ps1` / `Invoke-RemoteProofSweep.ps1`.
 - Proof-run не запускался.
+
+## 2026-07-08 short runtime-event filtering check
+
+- Запущен короткий bounded `allocdiag` batch: `spray=474`, `RepeatsPerSpray=2`, `ObserveMinutes=4`, `PostPayloadAllocTraceCount=300`, `PostPayloadAllocStackCount=3`, `StopOnExactReuse`.
+- Local result: `remote-results\remote-proof-20260708-105754`.
+- RUN 1: `no-success`, root-cause path не достигнут (`HasBadCleanup=False`, `HasPayloadRelease=False`), proof-сигналов нет.
+- RUN 2: `no-success`, root-cause path достигнут (`HasBadCleanup=True`, `HasPayloadRelease=True`), exact reuse/write/marker нет.
+- RUN 2 дал один post-release `0x20` allocation: `payload+0x121bc860`, caller `0x00007ff8a9cd50d9`; это далеко и не Frida-matched caller.
+- `CDB_FRIDA_MATCHED_ALLOC20_RETURN` и `CDB_NEAR_MISS_ALLOC30_RETURN` не появились.
+- `remote-proof-events.log` теперь содержит реальные runtime lines и не содержит CDB breakpoint command text, `.echo`, `Numeric expression missing` или `CDB PROOF` banner lines.
+- Полный CDB log RUN 2 сохранён локально: `remote-results\remote-proof-20260708-105754\cdb-proof-attempt-0008-20260708-010709-t2000-cFalse-rFalse-ocustomXml_first-spray474-repeat1.log`.
+
+## 2026-07-08 Scheduled Task startup stability cleanup
+
+- Разобрал существующие `scheduled-task` failures и Application/WER events на VM.
+- В окнах сбоев падали не только `powershell.exe`, но и `cmd.exe`, `taskkill.exe`, `WINWORD.EXE`, `cdb.exe` и Office helper processes. Это выглядит как нестабильность VM/Office/CDB под нагрузкой, а не один детерминированный bug wrapper.
+- Нашёл конкретный уменьшаемый риск: `tools\maintenance\clean-proof-state.ps1` запускал внешние `cmd.exe /c taskkill ...`, а `cmd.exe`/`taskkill.exe` уже попадали в APPCRASH с `0xc0000005`.
+- Добавил static test, запрещающий `cmd/taskkill` в `clean-proof-state.ps1`, сначала подтвердил RED.
+- Убрал внешний `cmd/taskkill` fallback из `clean-proof-state.ps1`; cleanup теперь опирается на PowerShell-native `Stop-Process`.
+- Локально прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks для `run-proof.ps1`, `Invoke-RemoteProofSweep.ps1`, `tools\maintenance\clean-proof-state.ps1`.
+- Синхронизировал изменения на VM: `AGENTS.md`, `WORKLOG.md`, план, `tools\maintenance\clean-proof-state.ps1`, `tests\RunProof.Static.Tests.ps1`.
+- На VM прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks для `run-proof.ps1`, `Invoke-RemoteProofSweep.ps1`, `tools\maintenance\clean-proof-state.ps1`.
+
+Follow-up bounded batch:
+
+- Local result: `remote-results\remote-proof-20260708-112255`.
+- 2/2 Scheduled Tasks завершились с `TaskLastTaskResult=0`; startup crash не воспроизвёлся.
+- RUN 1: `HasBadCleanup=True`, `HasPayloadRelease=True`, exact reuse/write/marker нет. Был один `0x30` post-release allocation at `payload-0x8246f90`, caller `0x00007ff895534a57`.
+- RUN 2: `HasBadCleanup=True`, `HasPayloadRelease=True`, exact reuse/write/marker нет, post-release allocation summary пустой.
+- RUN 1 подтвердил важную проблему в targeted diagnostics: caller совпадает по module offset с прежним `0x00007ffe4bed4a57`, но absolute address изменился из-за ASLR (`mso20win32client.dll` base изменился).
+- Исправил `run-proof.ps1`: targeted caller checks теперь module-relative:
+  - Frida-matched `0x20`: `mso20win32client+0x2a50d9`.
+  - near-miss `0x30`: `mso20win32client+0x2a4a57`.
+- Static tests обновлены: запрещают ASLR-sensitive absolute caller comparisons для targeted diagnostics.
+- Локально прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks.
+- Синхронизировал module-relative fix на VM (`run-proof.ps1`, static test и контекстные документы).
+- На VM прошли `RunProof.Static.Tests.ps1`, `RemoteProofSweep.Static.Tests.ps1` и parser checks для `run-proof.ps1`, `Invoke-RemoteProofSweep.ps1`, `tools\maintenance\clean-proof-state.ps1`.
+
+## 2026-07-08 module-relative targeted diagnostics check
+
+- Запущен короткий verification batch: `remote-results\remote-proof-20260708-114636`, `spray=474`, `RepeatsPerSpray=3`, `ObserveMode=allocdiag`, `ObserveMinutes=4`, `PostPayloadAllocTraceCount=300`, `PostPayloadAllocStackCount=3`.
+- RUN 1: failed `preview-trigger`, до CoCreateInstance не дошёл; `TaskLastTaskResult=0`.
+- RUN 2: валидный root-cause/no-success, `HasBadCleanup=True`, `HasPayloadRelease=True`, exact reuse/write/marker нет.
+- RUN 2 дал `PostPayloadAlloc20Count=13`, все наблюдаемые `0x20` allocations были далеко: `payload-0x18074a90`.
+- RUN 2 не попал в module-relative targets: `CDB_FRIDA_MATCHED_ALLOC20_RETURN` / `CDB_NEAR_MISS_ALLOC30_RETURN` не появились. Это не опровергает fix: CDB log показывает, что команда установлена с `mso20win32client+0x2a50d9` и `mso20win32client+0x2a4a57`, но конкретный allocation caller был другим (`0x00007ff895f9e81a`, stack around `AppVIsvSubsystems64` / registry query).
+- RUN 3: failed `scheduled-task`, `TaskLastTaskResult=3221225477` (`0xc0000005`). Diagnostics подтвердили `powershell.exe` APPCRASH до stdout/stderr, WER bucket `abd12585cd6c663009fe454baedf0a0b`.
+- Вывод: module-relative diagnostics синтаксически валидны и синхронизированы, но целевой `mso20win32client+0x2a4a57` / `+0x2a50d9` hit ещё нужно поймать в реальном run. Scheduled Task / VM instability сохраняется.
+
+## 2026-07-08 focused module-relative target batch
+
+- Запущен bounded batch с редким polling: `remote-results\remote-proof-20260708-121407`, `spray=474`, `RepeatsPerSpray=6`, `ObserveMode=allocdiag`, `ObserveMinutes=4`, `PostPayloadAllocTraceCount=300`, `PostPayloadAllocStackCount=3`, `DelayBetweenRunsSeconds=60`, `ScheduledTaskFailureDelaySeconds=300`, `StopOnExactReuse`.
+- Перед запуском VM была чистая: активных `ProofRemote-*`, `WINWORD` и `cdb` не было; `labadmin` был активен в console session.
+- Итог: 2 валидных root-cause/no-success runs, 3 `scheduled-task` failures с `TaskLastTaskResult=3221225477` (`0xc0000005`) и 1 `preview-trigger` failure до CoCreateInstance.
+- Exact reuse/write/marker снова не найден: `HasExactReuseRuntime=False`, `HasWatchHit=False`, `MarkerFound=False` во всех строках.
+- RUN 1 подтвердил module-relative targeted hit `CDB_NEAR_MISS_ALLOC30_RETURN` для `mso20win32client+0x2a4a57`, но delta слабая: `0x30` at `payload+0x4763b0`.
+- RUN 1 stack полезнее предыдущего AirSpace-варианта: `mso20win32client!Mso::Memory::AllocateEx -> wwlib!operator new -> wwlib!PobjxCreate -> wwlib!PwwserverdocCreate -> wwlib!WWSERVEROBJ::Initialize -> RPCRT4`.
+- RUN 1 также дал `0x20` allocations at `payload-0xac007e0`, caller `ucrtbase+0x50d9`, не Frida-matched `mso20win32client+0x2a50d9`.
+- RUN 4 достиг root-cause path, но без monitored post-release allocations.
+- Полные CDB/diagnostics logs скопированы локально в `remote-results\remote-proof-20260708-121407`.
+- Вывод: module-relative диагностика `+0x2a4a57` теперь проверена реальным hit, но не улучшила proximity; `+0x2a50d9` всё ещё не появился. Не стоит запускать следующий идентичный `spray=474` batch до отдельного шага по launcher stability или новой гипотезы по allocator pressure.

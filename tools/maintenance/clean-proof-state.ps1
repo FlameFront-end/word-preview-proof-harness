@@ -15,9 +15,6 @@ ForEach-Object {
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
 }
 
-cmd.exe /c "taskkill /f /t /im winword.exe >nul 2>nul"
-cmd.exe /c "taskkill /f /t /im cdb.exe >nul 2>nul"
-
 Write-Host "[*] Removing stale flags..."
 Remove-Item "C:\CVELAB\final\scripts\preview-ready-*.flag" -Force -ErrorAction SilentlyContinue
 Remove-Item "C:\CVELAB\final\scripts\preview-go-*.flag" -Force -ErrorAction SilentlyContinue

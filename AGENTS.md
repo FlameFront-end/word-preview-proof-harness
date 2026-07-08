@@ -158,6 +158,31 @@ This directly matches the passive CDB near-miss caller `0x00007ffeaa6850d9` for 
 The best passive CDB rows for that Frida-matched caller are `payload-0x21100` and `payload+0x2c5e0`.
 Therefore the next diagnostic target is the `0x20`/`0x00007ffeaa6850d9` path, not broad all-size repetition.
 
+The 2026-07-08 filtering check in `remote-results\remote-proof-20260708-105754` ran 2 attempts on `spray=474`:
+
+- RUN 1 did not reach the root-cause path.
+- RUN 2 reached `HasBadCleanup=True` and `HasPayloadRelease=True`, but no exact reuse/write/marker.
+- RUN 2 produced one weak post-release `0x20` allocation at `payload+0x121bc860`, caller `0x00007ff8a9cd50d9`; this does not match the Frida-matched caller.
+- `remote-proof-events.log` runtime-event filtering is verified on real runtime lines: it includes payload-release/bad-cleanup/post-allocation events and excludes CDB breakpoint command text, `.echo`, `Numeric expression missing`, and `CDB PROOF` banner lines.
+
+The 2026-07-08 module-relative diagnostic check in `remote-results\remote-proof-20260708-114636` confirmed the updated CDB command installs with `mso20win32client+0x2a50d9` and `mso20win32client+0x2a4a57`.
+It did not hit either targeted caller:
+
+- RUN 1 failed before CoCreateInstance.
+- RUN 2 reached root-cause/no-success and produced 13 far `0x20` allocations at `payload-0x18074a90`; caller was a different path around `AppVIsvSubsystems64` / registry query.
+- RUN 3 failed at Scheduled Task startup with `0xc0000005`; WER captured a `powershell.exe` APPCRASH in bucket `abd12585cd6c663009fe454baedf0a0b`.
+
+The 2026-07-08 focused module-relative target batch in `remote-results\remote-proof-20260708-121407` hit the `0x30` module-relative target:
+
+- 6 attempts on `spray=474`: 2 valid root-cause/no-success, 3 Scheduled Task `0xc0000005` failures, and 1 preview-trigger failure before CoCreateInstance.
+- No exact reuse/write/marker.
+- RUN 1 emitted `CDB_NEAR_MISS_ALLOC30_RETURN` and `CDB_NEAR_MISS_ALLOC30_STACK` for `mso20win32client+0x2a4a57`.
+- The hit was still far from proof: `0x30` returned `payload+0x4763b0`.
+- The stack was `mso20win32client!Mso::Memory::AllocateEx -> wwlib!operator new -> wwlib!PobjxCreate -> wwlib!PwwserverdocCreate -> wwlib!WWSERVEROBJ::Initialize -> RPCRT4`.
+- RUN 1 also had `0x20` allocations at `payload-0xac007e0` from `ucrtbase+0x50d9`, not the Frida-matched `mso20win32client+0x2a50d9`.
+- The Frida-matched `mso20win32client+0x2a50d9` path still has not appeared in passive CDB after the module-relative fix.
+- Do not run another identical `spray=474` batch as the next default step; either stabilize Scheduled Task/PowerShell startup first, or change the allocator-pressure/timing hypothesis toward the missing `mso20win32client+0x2a50d9` path.
+
 ## Important Current Code Behavior
 
 `run-proof.ps1` supports:
@@ -174,9 +199,10 @@ Current diagnostics include:
 - one `CDB_PAYLOAD_RELEASE_STACK` stack capture at payload release.
 - bounded allocation stack capture controlled by `PostPayloadAllocStackCount`.
 - targeted post-release allocation stack capture for:
-  - `CDB_FRIDA_MATCHED_ALLOC20_RETURN` / `CDB_FRIDA_MATCHED_ALLOC20_STACK`: `size=0x20`, caller `0x00007ffeaa6850d9`.
-  - `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`: `size=0x30`, caller `0x00007ffe4bed4a57`.
+  - `CDB_FRIDA_MATCHED_ALLOC20_RETURN` / `CDB_FRIDA_MATCHED_ALLOC20_STACK`: `size=0x20`, caller target `mso20win32client+0x2a50d9`.
+  - `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`: `size=0x30`, caller target `mso20win32client+0x2a4a57`.
   These targeted stacks are bounded by `PostPayloadAllocStackCount` but are not limited to the first global allocation events, so late target hits such as allocation index 14-15 are captured.
+  Do not hard-code absolute caller addresses for these diagnostics: VM restart/ASLR changed old `0x00007ffe4bed4a57` to `0x00007ff895534a57` while preserving module offset `mso20win32client+0x2a4a57`.
 - all-size post-payload allocation ranking: `BestPostPayloadAllocDelta` and closest positive/negative/absolute fields are based on all monitored sizes, not only legacy `0x20` events.
 - spray duration and tables/sec in attempt summaries.
 - preview trigger `Initialize hr`, exit code, and exit state in attempt summaries.
@@ -184,6 +210,7 @@ Current diagnostics include:
 - remote wrapper report tails: `RemoteOutputTail`, `RemoteErrorTail`, `LastTriggerStage`, and `LastHarnessError`.
 - `Invoke-RemoteProofSweep.ps1` suppresses PowerShell progress in local, remote, and Scheduled Task contexts to avoid WinRM/CLIXML noise breaking local result collection after a proof run has already completed.
 - `Invoke-RemoteProofSweep.ps1` filters `remote-proof-events.log` to real runtime CDB event lines. Do not export raw `Select-String` matches from CDB logs because breakpoint command text contains proof tag names.
+- `tools\maintenance\clean-proof-state.ps1` must avoid external `cmd.exe / taskkill.exe` cleanup fallbacks. Existing VM evidence showed `cmd.exe` and `taskkill.exe` APPCRASH events during unstable proof windows, so cleanup should stay PowerShell-native unless a new diagnosis proves otherwise.
 
 Remote attempts now write unique per-run summary/ranking files:
 
@@ -295,7 +322,7 @@ Keep this plan updated after each completed step. If a step changes the evidence
    - `AGENTS.md`
 
 4. Current best passive candidate is `spray=474`.
-   After 49 valid focused root-path runs without exact reuse/write/marker, do not keep running identical blind `spray=474` batches as the next default step. The strongest observed near-miss is still `0x20` at `payload-0x3810`; use that evidence to compare against Frida controlled-reuse diagnostics.
+   After 51 valid focused root-path runs without exact reuse/write/marker, do not keep running identical blind `spray=474` batches as the next default step. The strongest observed near-miss is still `0x20` at `payload-0x3810`; use that evidence to compare against Frida controlled-reuse diagnostics.
 
 5. Rank candidates by:
    - exact reuse/write/marker first
@@ -310,6 +337,12 @@ Keep this plan updated after each completed step. If a step changes the evidence
 7. Next diagnostic step: obtain or run a Frida controlled-reuse log and compare allocation size, heap, thread, caller/stack, and timing against `remote-results\near-miss-analysis-20260707-232117`.
    This has now identified `0x20` caller `0x00007ffeaa6850d9` as the Frida-matched path, and `run-proof.ps1` now has targeted CDB stack diagnostics for it. Next passive run should use `ObserveMode allocdiag` and a nonzero `PostPayloadAllocStackCount` to collect those target stacks before another overnight sweep.
    The 2026-07-08 focused batch confirmed the `0x30` near-miss targeted stack path, but not the Frida-matched `0x20` path. The `0x30` stack is UI/ribbon/AirSpace related and far from payload in that run, so do not treat it as the main proof path unless it becomes close again.
+   A later 2026-07-08 filtering check verified event export filtering, but only produced a weak non-Frida-matched `0x20` allocation at `payload+0x121bc860`.
+   The 2026-07-08 cleanup/stability batch completed 2/2 Scheduled Tasks without startup crash and exposed the ASLR issue in targeted caller matching. The next diagnostic run should verify module-relative targets, not absolute-address targets.
+   A follow-up module-relative check verified command installation but did not hit the targeted callers.
+   The next focused batch hit `mso20win32client+0x2a4a57`, but only at `payload+0x4763b0`, with stack through `wwlib!PobjxCreate` / `PwwserverdocCreate` / `WWSERVEROBJ::Initialize`.
+   The Frida-matched `mso20win32client+0x2a50d9` path remains missing in passive CDB.
+   Do not run another identical `spray=474` batch until either Scheduled Task startup is stabilized or the allocator-pressure/timing hypothesis changes.
 
 8. For overnight runs, prefer many bounded attempts over one very long attempt.
    Current practical shape: repeated `deep` attempts of 10-15 minutes on narrowed candidates, stopping on exact reuse.
@@ -327,7 +360,8 @@ After every proof run or code change:
 
 - CDB command syntax for the any-size exact-reuse detector must be verified in a real VM run after syncing the latest local files.
 - WinRM/PowerShell progress streams can corrupt local wrapper result collection with CLIXML noise. Keep `$ProgressPreference = "SilentlyContinue"` in local, remote, and Scheduled Task runner contexts.
-- Scheduled Task / Office startup failures remain common in batches. Recent failures included `0xc0000005` and `0xc0000142`. Treat those rows as invalid proof attempts and consider launcher stabilization before larger unattended sweeps.
+- Scheduled Task / Office startup failures remain common in batches. Recent failures included `0xc0000005` and `0xc0000142`; the latest 6-run batch had 3 Scheduled Task `0xc0000005` failures and 1 preview-trigger failure. Treat those rows as invalid proof attempts and prioritize launcher stabilization before larger unattended sweeps.
+- VM Application/WER logs around unstable windows show crashes across `powershell.exe`, `cmd.exe`, `taskkill.exe`, `WINWORD.EXE`, `cdb.exe`, and Office helper processes. Do not assume all `scheduled-task` failures are wrapper bugs; capture diagnostics and reduce avoidable process-launch pressure.
 - Frida proves controllability, not passive reuse.
 - Shared result files can be stale; prefer unique per-run summaries from the fixed remote wrapper.
 - Word COM is unreliable from non-interactive WinRM; use Scheduled Tasks for remote proof runs.

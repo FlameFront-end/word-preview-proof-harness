@@ -23,6 +23,12 @@ $automatedPreviewText = if (Test-Path $automatedPreviewPath) {
 } else {
     ""
 }
+$cleanProofStatePath = Join-Path $projectDir "tools\maintenance\clean-proof-state.ps1"
+$cleanProofStateText = if (Test-Path $cleanProofStatePath) {
+    Get-Content $cleanProofStatePath -Raw
+} else {
+    ""
+}
 
 function Assert-Contains {
     param(
@@ -161,10 +167,11 @@ Assert-Contains $scriptText 'CDB_ALLOC_DIAG_COMPLETE' "Allocdiag completion tag 
 Assert-Contains $scriptText 'heap=%p flags=%p caller=%p tid=%x' "Post-payload allocation diagnostics do not include heap, flags, caller, and thread"
 Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_RETURN' "Frida-matched 0x20 allocation target diagnostic tag is missing"
 Assert-Contains $scriptText 'CDB_FRIDA_MATCHED_ALLOC20_STACK' "Frida-matched 0x20 allocation stack diagnostic tag is missing"
-Assert-Contains $scriptText '0x00007ffeaa6850d9' "Frida-matched 0x20 allocation caller is not targeted"
+Assert-Contains $scriptText 'mso20win32client\+0x2a50d9' "Frida-matched 0x20 allocation caller target is not module-relative"
 Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_RETURN' "Near-miss 0x30 allocation target diagnostic tag is missing"
 Assert-Contains $scriptText 'CDB_NEAR_MISS_ALLOC30_STACK' "Near-miss 0x30 allocation stack diagnostic tag is missing"
-Assert-Contains $scriptText '0x00007ffe4bed4a57' "Near-miss 0x30 allocation caller is not targeted"
+Assert-Contains $scriptText 'mso20win32client\+0x2a4a57' "Near-miss 0x30 allocation caller target is not module-relative"
+Assert-NotContains $scriptText '@\$\w+\s*==\s*0x00007ffe(?:aa6850d9|4bed4a57)' "Targeted allocation diagnostics must not compare caller against ASLR-sensitive absolute addresses"
 Assert-Contains $scriptText 'r\s+@\$t14\s*=\s*0' "Frida-matched allocation stack counter is not initialized"
 Assert-Contains $scriptText 'r\s+@\$t15\s*=\s*0' "Near-miss allocation stack counter is not initialized"
 $rtlAllocateHeapBreakpointCount = [regex]::Matches($scriptText, 'bu\s+ntdll!RtlAllocateHeap').Count
@@ -498,6 +505,20 @@ $automatedErrors = $null
 if ($automatedErrors.Count -gt 0) {
     throw "Start-FridaPreviewRun.ps1 has PowerShell parser errors"
 }
+
+if (-not (Test-Path $cleanProofStatePath)) {
+    throw "clean-proof-state.ps1 is missing"
+}
+
+$cleanProofStateTokens = $null
+$cleanProofStateErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($cleanProofStatePath, [ref]$cleanProofStateTokens, [ref]$cleanProofStateErrors) | Out-Null
+if ($cleanProofStateErrors.Count -gt 0) {
+    throw "clean-proof-state.ps1 has PowerShell parser errors"
+}
+
+Assert-NotContains $cleanProofStateText 'cmd\.exe\s*/c\s*"taskkill' "clean-proof-state.ps1 must avoid cmd/taskkill because those external helpers have crashed during VM cleanup"
+Assert-Contains $cleanProofStateText 'Stop-Process\s+-Id\s+\$_\.Id\s+-Force' "clean-proof-state.ps1 must use PowerShell-native process termination for WINWORD/CDB"
 
 Assert-Contains $automatedPreviewText '\[ValidateScript\(\{\s*Test-Path\s+-LiteralPath\s+\$_\s+-PathType\s+Leaf\s*\}\)\]\s*\[string\]\$DocPath' "Start-FridaPreviewRun.ps1 does not require an existing DOCX path"
 Assert-Contains $automatedPreviewText '\[string\]\$WordPath\s*=\s*"C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD\.EXE"' "Start-FridaPreviewRun.ps1 does not default to Office16 WINWORD.EXE"
