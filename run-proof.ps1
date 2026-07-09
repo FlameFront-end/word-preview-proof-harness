@@ -601,6 +601,12 @@ function Write-AttemptSummary {
         [string]$PostPayloadAllocSummary = "",
         [string]$BestPostPayloadAllocSize = "",
         [string]$BestPostPayloadAllocDelta = "",
+        [string]$BestSameFreeHeapAllocSize = "",
+        [string]$BestSameFreeHeapAllocDelta = "",
+        [string]$BestSameFreeHeapAllocCaller = "",
+        [string]$BestSameFreeThreadAllocSize = "",
+        [string]$BestSameFreeThreadAllocDelta = "",
+        [string]$BestSameFreeThreadAllocCaller = "",
         [string]$ClosestPositivePostPayloadAllocDelta = "",
         [string]$ClosestNegativePostPayloadAllocDelta = "",
         [string]$ClosestAbsolutePostPayloadAllocDelta = "",
@@ -636,6 +642,12 @@ function Write-AttemptSummary {
         PostPayloadAllocSummary      = $PostPayloadAllocSummary
         BestPostPayloadAllocSize     = $BestPostPayloadAllocSize
         BestPostPayloadAllocDelta    = $BestPostPayloadAllocDelta
+        BestSameFreeHeapAllocSize    = $BestSameFreeHeapAllocSize
+        BestSameFreeHeapAllocDelta   = $BestSameFreeHeapAllocDelta
+        BestSameFreeHeapAllocCaller  = $BestSameFreeHeapAllocCaller
+        BestSameFreeThreadAllocSize  = $BestSameFreeThreadAllocSize
+        BestSameFreeThreadAllocDelta = $BestSameFreeThreadAllocDelta
+        BestSameFreeThreadAllocCaller = $BestSameFreeThreadAllocCaller
         WordPrivateBytesBeforeSpray  = $WordPrivateBytesBeforeSpray
         WordPrivateBytesAfterSpray   = $WordPrivateBytesAfterSpray
         WordWorkingSetBeforeSpray    = $WordWorkingSetBeforeSpray
@@ -745,6 +757,12 @@ function Get-PostPayloadAllocSummary {
             Summary      = ""
             BestSize     = ""
             BestDelta    = ""
+            BestSameFreeHeapSize = ""
+            BestSameFreeHeapDelta = ""
+            BestSameFreeHeapCaller = ""
+            BestSameFreeThreadSize = ""
+            BestSameFreeThreadDelta = ""
+            BestSameFreeThreadCaller = ""
             ClosestPositiveDelta = ""
             ClosestNegativeDelta = ""
             ClosestAbsoluteDelta = ""
@@ -781,6 +799,8 @@ function Get-PostPayloadAllocSummary {
     $summaryParts = New-Object System.Collections.Generic.List[string]
     $bestSize = ""
     $bestDelta = $null
+    $sameFreeHeapEvents = New-Object System.Collections.Generic.List[object]
+    $sameFreeThreadEvents = New-Object System.Collections.Generic.List[object]
     foreach ($size in ($sizeGroups.Keys | Sort-Object)) {
         $sizeDeltas = @($sizeGroups[$size].ToArray())
         $closest = if ($sizeDeltas.Count -gt 0) {
@@ -796,6 +816,28 @@ function Get-PostPayloadAllocSummary {
         }
     }
 
+    foreach ($event in $allAllocEvents) {
+        $line = $event.Line
+        if ($line -notmatch 'delta=([0-9a-fA-F`]+)') { continue }
+        $parsedDelta = Convert-CdbDelta -Delta $Matches[1]
+        $size = if ($line -match 'size=([0-9a-fA-Fx`]+)') { $Matches[1].ToLowerInvariant() } else { "" }
+        $caller = if ($line -match 'caller=([0-9a-fA-F`]+)') { $Matches[1] } else { "" }
+        $record = [pscustomobject]@{
+            Size   = $size
+            Delta  = $parsedDelta
+            Caller = $caller
+        }
+        if ($line -match 'sameFreeHeap=1') {
+            [void]$sameFreeHeapEvents.Add($record)
+        }
+        if ($line -match 'sameFreeThread=1') {
+            [void]$sameFreeThreadEvents.Add($record)
+        }
+    }
+
+    $bestSameFreeHeap = @($sameFreeHeapEvents.ToArray()) | Sort-Object { $_.Delta.Absolute } | Select-Object -First 1
+    $bestSameFreeThread = @($sameFreeThreadEvents.ToArray()) | Sort-Object { $_.Delta.Absolute } | Select-Object -First 1
+
     return [pscustomobject]@{
         Count        = $allocEvents.Count
         FirstDelta   = if ($deltas.Count -gt 0) { $deltas[0] } else { "" }
@@ -804,6 +846,12 @@ function Get-PostPayloadAllocSummary {
         Summary      = ($summaryParts -join ";")
         BestSize     = $bestSize
         BestDelta    = if ($bestDelta) { $bestDelta.Text } else { "" }
+        BestSameFreeHeapSize = if ($bestSameFreeHeap) { $bestSameFreeHeap.Size } else { "" }
+        BestSameFreeHeapDelta = if ($bestSameFreeHeap) { $bestSameFreeHeap.Delta.Text } else { "" }
+        BestSameFreeHeapCaller = if ($bestSameFreeHeap) { $bestSameFreeHeap.Caller } else { "" }
+        BestSameFreeThreadSize = if ($bestSameFreeThread) { $bestSameFreeThread.Size } else { "" }
+        BestSameFreeThreadDelta = if ($bestSameFreeThread) { $bestSameFreeThread.Delta.Text } else { "" }
+        BestSameFreeThreadCaller = if ($bestSameFreeThread) { $bestSameFreeThread.Caller } else { "" }
         ClosestPositiveDelta = if ($allParsedDeltas.Count -gt 0) { @($allParsedDeltas | Where-Object { -not $_.Negative } | Sort-Object Absolute | Select-Object -First 1).Text } else { "" }
         ClosestNegativeDelta = if ($allParsedDeltas.Count -gt 0) { @($allParsedDeltas | Where-Object { $_.Negative } | Sort-Object Absolute | Select-Object -First 1).Text } else { "" }
         ClosestAbsoluteDelta = if ($allParsedDeltas.Count -gt 0) { @($allParsedDeltas | Sort-Object Absolute | Select-Object -First 1).Text } else { "" }
@@ -1820,6 +1868,12 @@ catch {
         PostPayloadAllocSummary     = $postPayloadAllocSummary.Summary
         BestPostPayloadAllocSize    = $postPayloadAllocSummary.BestSize
         BestPostPayloadAllocDelta   = $postPayloadAllocSummary.BestDelta
+        BestSameFreeHeapAllocSize   = $postPayloadAllocSummary.BestSameFreeHeapSize
+        BestSameFreeHeapAllocDelta  = $postPayloadAllocSummary.BestSameFreeHeapDelta
+        BestSameFreeHeapAllocCaller = $postPayloadAllocSummary.BestSameFreeHeapCaller
+        BestSameFreeThreadAllocSize = $postPayloadAllocSummary.BestSameFreeThreadSize
+        BestSameFreeThreadAllocDelta = $postPayloadAllocSummary.BestSameFreeThreadDelta
+        BestSameFreeThreadAllocCaller = $postPayloadAllocSummary.BestSameFreeThreadCaller
         ClosestPositivePostPayloadAllocDelta = $postPayloadAllocSummary.ClosestPositiveDelta
         ClosestNegativePostPayloadAllocDelta = $postPayloadAllocSummary.ClosestNegativeDelta
         ClosestAbsolutePostPayloadAllocDelta = $postPayloadAllocSummary.ClosestAbsoluteDelta
@@ -1985,6 +2039,12 @@ if ($Mode -eq "telemetry") {
                     PostPayloadAllocSummary      = $result.PostPayloadAllocSummary
                     BestPostPayloadAllocSize     = $result.BestPostPayloadAllocSize
                     BestPostPayloadAllocDelta    = $result.BestPostPayloadAllocDelta
+                    BestSameFreeHeapAllocSize    = $result.BestSameFreeHeapAllocSize
+                    BestSameFreeHeapAllocDelta   = $result.BestSameFreeHeapAllocDelta
+                    BestSameFreeHeapAllocCaller  = $result.BestSameFreeHeapAllocCaller
+                    BestSameFreeThreadAllocSize  = $result.BestSameFreeThreadAllocSize
+                    BestSameFreeThreadAllocDelta = $result.BestSameFreeThreadAllocDelta
+                    BestSameFreeThreadAllocCaller = $result.BestSameFreeThreadAllocCaller
                     ClosestPositivePostPayloadAllocDelta = $result.ClosestPositivePostPayloadAllocDelta
                     ClosestNegativePostPayloadAllocDelta = $result.ClosestNegativePostPayloadAllocDelta
                     ClosestAbsolutePostPayloadAllocDelta = $result.ClosestAbsolutePostPayloadAllocDelta

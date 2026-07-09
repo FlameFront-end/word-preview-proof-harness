@@ -219,3 +219,27 @@ Follow-up runtime checks:
 - Verification batch `remote-results\remote-proof-20260708-222714`: 2/2 runs снова достигли root-cause/payload release. RUN 1 подтвердил `CDB_PAYLOAD_RTLFREEHEAP_ENTER` и post-release allocations with `sameFreeHeap=1`, `sameFreeThread=0`; closest observed allocation was still far (`0x30` at `payload+0x6e00050`, `0x20` at `payload+0xb12bb10`). Exact reuse/write/marker нет.
 - RUN 2 в том же batch показал, что `RtlFreeHeap` breakpoint оставался включённым и печатал repeated payload-free lines. Исправил self-disable: matched `RtlFreeHeap(payload)` branch теперь выполняет `bd 7` после первого capture.
 - Final verification sample `remote-results\remote-proof-20260708-224643`: root-cause/payload release достигнут, exact reuse/write/marker нет, post-release allocations нет. CDB log подтвердил command shape: `be 5; be 7`, `bu ntdll!RtlFreeHeap ... CDB_PAYLOAD_RTLFREEHEAP_ENTER ... bd 7`, затем install-time `bd 7`. В этом sample `CDB_PAYLOAD_RTLFREEHEAP_ENTER` не hit-нулся, поэтому runtime self-disable ждёт подтверждения на следующем sample, где payload free проходит через этот breakpoint.
+
+## 2026-07-09 overnight same-free-thread diagnostics
+
+- Запустил bounded micro-sweep `remote-results\remote-proof-20260709-001633`: `spray=471..477`, по 1 repeat, `ObserveMode=allocdiag`, `ObserveMinutes=4`, `PostPayloadAllocTraceCount=300`, `PostPayloadAllocStackCount=3`.
+- Exact reuse/write/marker не найден.
+- Лучший новый signal: `spray=474`, RUN 4, `CDB_NEAR_MISS_ALLOC30_RETURN`, `size=0x30`, `caller=mso20win32client+0x2a4a57`, `delta=+0x143710`, `sameFreeHeap=1`, `sameFreeThread=1`.
+- Это намного строже прежних near-miss rows: allocation был на том же heap/thread, где freed payload, но всё ещё не exact reuse.
+- В этом же batch `spray=472` дал `0x30` same-thread event, но далеко и на другом heap: `delta=0xffffffffe8cdbf30`, caller `AppVIsvSubsystems64`.
+- `spray=471` и `476` дошли до root-cause/payload release без useful post-release allocations; `473`, `475`, `477` были слабее или не дошли до payload release.
+
+Focused follow-ups:
+
+- `remote-results\remote-proof-20260709-012612`: `spray=474`, 6 repeats. 4 root-cause/payload-release runs, 1 preview-trigger failure, 1 no-root-cause. Exact reuse/write/marker нет. Хороший `+0x143710` same-thread target не повторился; единственный post-release `0x20` был далёкий negative (`0xffffffffe88d7060`).
+- `remote-results\remote-proof-20260709-021833`: `spray=472..475`, по 2 repeats. Exact reuse/write/marker нет. `472` дал только слабый `0x40 +0x86feae0`; `473` после startup retries дал далёкий `0x20` negative (`0xffffffffe90453e0`); `474/475` не улучшили proximity.
+- Вывод: лучший строгий passive signal сейчас `spray=474`, `0x30`, `mso20win32client+0x2a4a57`, same heap/thread, `payload+0x143710`. Frida-matched `mso20win32client+0x2a50d9` всё ещё не появился в passive CDB.
+
+Report/schema update:
+
+- Добавил TDD static checks для automatic same-free allocation ranking в local и remote reports.
+- `run-proof.ps1` теперь пишет в attempt summary:
+  - `BestSameFreeHeapAllocSize`, `BestSameFreeHeapAllocDelta`, `BestSameFreeHeapAllocCaller`;
+  - `BestSameFreeThreadAllocSize`, `BestSameFreeThreadAllocDelta`, `BestSameFreeThreadAllocCaller`.
+- `Invoke-RemoteProofSweep.ps1` прокидывает эти поля в `remote-proof-report.csv`.
+- Smoke `remote-results\remote-proof-20260709-065952` подтвердил новую схему remote report; run достиг root-cause/payload release, exact reuse/write/marker нет, same-free поля присутствуют, но были пустыми из-за отсутствия post-release allocations.

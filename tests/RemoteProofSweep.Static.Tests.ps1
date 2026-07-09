@@ -70,6 +70,8 @@ Assert-Contains $scriptText 'CDB_POST_PAYLOAD_ALLOC20_RETURN' "Post-payload allo
 Assert-Contains $scriptText 'BestPostPayloadAllocSize' "Remote best allocation size ranking field is missing"
 Assert-Contains $scriptText 'BestPostPayloadAllocDelta' "Remote best allocation delta ranking field is missing"
 Assert-Contains $scriptText 'PostPayloadAllocSummary' "Remote allocation summary field is missing"
+Assert-Contains $scriptText 'BestSameFreeHeapAllocDelta' "Remote best same-free-heap allocation delta field is missing"
+Assert-Contains $scriptText 'BestSameFreeThreadAllocDelta' "Remote best same-free-thread allocation delta field is missing"
 Assert-Contains $scriptText 'ObserveMode\s*=\s*"allocdiag"' "Remote sweep does not support allocdiag mode"
 Assert-Contains $scriptText 'Export-Clixml' "Machine-readable result export is missing"
 Assert-Contains $scriptText '\[int\]\$DelayBetweenRunsSeconds' "Remote sweep does not expose a bounded cooldown between runs"

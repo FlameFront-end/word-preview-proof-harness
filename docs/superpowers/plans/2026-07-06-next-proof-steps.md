@@ -238,3 +238,11 @@ cd C:\Development\test\cve-ps1
     Two follow-up batches stalled before root-cause after the always-active `RtlFreeHeap` breakpoint was added. `run-proof.ps1` now installs it as breakpoint 7, immediately disables it with `bd 7`, and enables it only after `CDB_PAYLOAD_RELEASE_ENTER` with `be 5; be 7`.
   - [ ] Verify `RtlFreeHeap` self-disable in a runtime sample where payload free hits the breakpoint.
     `remote-results\remote-proof-20260708-224643` verified the command shape with `bd 7` inside the matched `RtlFreeHeap(payload)` branch, but that particular root-cause sample did not hit `CDB_PAYLOAD_RTLFREEHEAP_ENTER`.
+  - [x] Add automatic same-free heap/thread ranking to local and remote reports.
+    `run-proof.ps1` now writes `BestSameFreeHeapAlloc*` and `BestSameFreeThreadAlloc*` fields, and `Invoke-RemoteProofSweep.ps1` forwards them into `remote-proof-report.csv`.
+    Smoke `remote-results\remote-proof-20260709-065952` verified the fields are present in the remote report.
+  - [x] Run a non-identical same-thread micro-sweep around the transition zone.
+    `remote-results\remote-proof-20260709-001633` tested `spray=471..477`. Best strict signal was `spray=474`, `0x30`, `mso20win32client+0x2a4a57`, `sameFreeHeap=1`, `sameFreeThread=1`, `delta=+0x143710`.
+  - [x] Try focused repeats after the new strict signal.
+    `remote-results\remote-proof-20260709-012612` (`474 x6`) and `remote-results\remote-proof-20260709-021833` (`472..475 x2`) did not reproduce a closer same-thread allocation and did not produce exact reuse/write/marker.
+  - [ ] Decide whether to add a new targeted diagnostic for the `mso20win32client+0x2a4a57` same-thread `0x30` path, or switch to a Frida-guided timing comparison for why `+0x2a50d9` is still missing passively.

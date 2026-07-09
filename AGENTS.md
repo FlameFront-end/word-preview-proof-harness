@@ -197,6 +197,9 @@ Current diagnostics include:
 
 - post-payload allocation lines with size, heap, flags, caller, thread id, return pointer, payload pointer, delta, freed-payload heap/thread, and same-heap/same-thread booleans.
 - `CDB_PAYLOAD_RTLFREEHEAP_ENTER`, which captures the actual `RtlFreeHeap(payload)` heap/thread before comparing later allocations against the freed slot context.
+- same-free allocation ranking fields in local attempt summaries and remote reports:
+  - `BestSameFreeHeapAllocSize`, `BestSameFreeHeapAllocDelta`, `BestSameFreeHeapAllocCaller`.
+  - `BestSameFreeThreadAllocSize`, `BestSameFreeThreadAllocDelta`, `BestSameFreeThreadAllocCaller`.
 - one `CDB_PAYLOAD_RELEASE_STACK` stack capture at payload release.
 - bounded allocation stack capture controlled by `PostPayloadAllocStackCount`.
 - targeted post-release allocation stack capture for:
@@ -254,6 +257,17 @@ The control run `remote-results\remote-proof-20260708-174513` verified the comma
 Follow-up batches showed that an always-active `RtlFreeHeap` breakpoint causes pre-release CDB overhead and can stall before root-cause; keep it disabled until payload release.
 `remote-results\remote-proof-20260708-222714` verified `CDB_PAYLOAD_RTLFREEHEAP_ENTER` in RUN 1. The observed allocations were on the same heap as the freed payload but on a different thread, and still far from payload.
 `remote-results\remote-proof-20260708-224643` verified the self-disable command shape in a root-cause sample, but that sample did not hit `CDB_PAYLOAD_RTLFREEHEAP_ENTER`; runtime self-disable remains to be seen in a later sample that hits the free breakpoint.
+The 2026-07-09 overnight micro-sweep `remote-results\remote-proof-20260709-001633` found the current best strict passive signal:
+
+- `spray=474`
+- `size=0x30`
+- caller `mso20win32client+0x2a4a57`
+- `sameFreeHeap=1`
+- `sameFreeThread=1`
+- `delta=+0x143710`
+
+Follow-up `474 x6` and `472..475 x2` batches did not reproduce a closer same-thread allocation and did not produce exact reuse/write/marker.
+The Frida-matched `mso20win32client+0x2a50d9` path is still missing in passive CDB.
 
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
@@ -375,7 +389,8 @@ Keep this plan updated after each completed step. If a step changes the evidence
    The next focused batch hit `mso20win32client+0x2a4a57`, but only at `payload+0x4763b0`, with stack through `wwlib!PobjxCreate` / `PwwserverdocCreate` / `WWSERVEROBJ::Initialize`.
    The Frida-matched `mso20win32client+0x2a50d9` path remains missing in passive CDB.
    A new payload-free heap/thread diagnostic now records `CDB_PAYLOAD_RTLFREEHEAP_ENTER` and annotates later allocations with same-free-heap/thread fields. Runtime was verified in `remote-results\remote-proof-20260708-222714`: allocations were same heap but different thread and still far from payload. Keep `RtlFreeHeap` disabled until payload release; an always-active free breakpoint stalled root-cause progress.
-   Do not run another identical `spray=474` batch until either Scheduled Task startup is stabilized or the allocator-pressure/timing hypothesis changes.
+   The current best strict passive signal is `remote-results\remote-proof-20260709-001633`, RUN 4: `spray=474`, `0x30`, `mso20win32client+0x2a4a57`, `sameFreeHeap=1`, `sameFreeThread=1`, `payload+0x143710`.
+   Focused repeats did not improve it. Next non-identical step should either add a targeted diagnostic for that same-thread `0x30` path, or use Frida-guided timing comparison to explain why `mso20win32client+0x2a50d9` remains missing passively.
 
 8. For overnight runs, prefer many bounded attempts over one very long attempt.
    Current practical shape: repeated `deep` attempts of 10-15 minutes on narrowed candidates, stopping on exact reuse.
