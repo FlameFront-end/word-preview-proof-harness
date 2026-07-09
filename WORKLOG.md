@@ -243,3 +243,22 @@ Report/schema update:
   - `BestSameFreeThreadAllocSize`, `BestSameFreeThreadAllocDelta`, `BestSameFreeThreadAllocCaller`.
 - `Invoke-RemoteProofSweep.ps1` прокидывает эти поля в `remote-proof-report.csv`.
 - Smoke `remote-results\remote-proof-20260709-065952` подтвердил новую схему remote report; run достиг root-cause/payload release, exact reuse/write/marker нет, same-free поля присутствуют, но были пустыми из-за отсутствия post-release allocations.
+
+Additional focused batch:
+
+- `remote-results\remote-proof-20260709-071320`: `spray=474`, 6 repeats, after same-free report fields were committed.
+- Result: 5 valid root-cause/payload-release runs, 1 scheduled-task failure after two `0xc0000005` startup retries.
+- Exact reuse/write/marker не найден.
+- Post-release allocations не появились; `BestSameFreeHeapAlloc*` и `BestSameFreeThreadAlloc*` остались пустыми.
+- Вывод: `spray=474` всё ещё лучший кандидат по предыдущему strict signal, но same-thread near miss `+0x143710` не воспроизводится часто.
+
+Same-free-thread targeted stack update:
+
+- Добавил TDD static checks для нового targeted diagnostic:
+  - `CDB_SAME_FREE_THREAD_ALLOC_RETURN`
+  - `CDB_SAME_FREE_THREAD_ALLOC_STACK`
+  - отдельный bounded counter `@$t19`.
+- `run-proof.ps1` теперь захватывает stack не только для Frida-matched `0x20` и near-miss `0x30`, но и для любых monitored allocations, где `heap == freeHeap` и `tid == freeTid`.
+- `Invoke-RemoteProofSweep.ps1` экспортирует эти tags в `remote-proof-events.log`.
+- Локально и на VM прошли static/parser checks.
+- Runtime smoke `remote-results\remote-proof-20260709-094300`: root-cause/payload-release достигнут, exact reuse/write/marker нет, same-thread allocation не случился, но новый CDB command shape не сломал run.

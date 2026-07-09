@@ -246,3 +246,9 @@ cd C:\Development\test\cve-ps1
   - [x] Try focused repeats after the new strict signal.
     `remote-results\remote-proof-20260709-012612` (`474 x6`) and `remote-results\remote-proof-20260709-021833` (`472..475 x2`) did not reproduce a closer same-thread allocation and did not produce exact reuse/write/marker.
   - [ ] Decide whether to add a new targeted diagnostic for the `mso20win32client+0x2a4a57` same-thread `0x30` path, or switch to a Frida-guided timing comparison for why `+0x2a50d9` is still missing passively.
+    - [x] Add a generic same-free-thread targeted stack diagnostic before changing the proof candidate again.
+      `run-proof.ps1` now emits `CDB_SAME_FREE_THREAD_ALLOC_RETURN` / `CDB_SAME_FREE_THREAD_ALLOC_STACK` for monitored allocations whose heap/thread match the actual freed payload heap/thread, bounded by `PostPayloadAllocStackCount`.
+      `Invoke-RemoteProofSweep.ps1` exports these tags.
+    - [x] Smoke-test the new CDB command shape.
+      `remote-results\remote-proof-20260709-094300` reached root-cause/payload release with the new command installed; no exact reuse/write/marker and no same-thread allocation in that single sample.
+    - [ ] Run the next bounded diagnostic batch only to collect same-free-thread targeted stacks or exact reuse/write, not to repeat blind proximity counting.

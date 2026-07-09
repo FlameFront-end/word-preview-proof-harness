@@ -205,6 +205,7 @@ Current diagnostics include:
 - targeted post-release allocation stack capture for:
   - `CDB_FRIDA_MATCHED_ALLOC20_RETURN` / `CDB_FRIDA_MATCHED_ALLOC20_STACK`: `size=0x20`, caller target `mso20win32client+0x2a50d9`.
   - `CDB_NEAR_MISS_ALLOC30_RETURN` / `CDB_NEAR_MISS_ALLOC30_STACK`: `size=0x30`, caller target `mso20win32client+0x2a4a57`.
+  - `CDB_SAME_FREE_THREAD_ALLOC_RETURN` / `CDB_SAME_FREE_THREAD_ALLOC_STACK`: any monitored size where allocation heap/thread match the captured freed payload heap/thread.
   These targeted stacks are bounded by `PostPayloadAllocStackCount` but are not limited to the first global allocation events, so late target hits such as allocation index 14-15 are captured.
   Do not hard-code absolute caller addresses for these diagnostics: VM restart/ASLR changed old `0x00007ffe4bed4a57` to `0x00007ff895534a57` while preserving module offset `mso20win32client+0x2a4a57`.
 - all-size post-payload allocation ranking: `BestPostPayloadAllocDelta` and closest positive/negative/absolute fields are based on all monitored sizes, not only legacy `0x20` events.
@@ -268,6 +269,8 @@ The 2026-07-09 overnight micro-sweep `remote-results\remote-proof-20260709-00163
 
 Follow-up `474 x6` and `472..475 x2` batches did not reproduce a closer same-thread allocation and did not produce exact reuse/write/marker.
 The Frida-matched `mso20win32client+0x2a50d9` path is still missing in passive CDB.
+After that, `CDB_SAME_FREE_THREAD_ALLOC_RETURN` / `STACK` was added so future runs capture any same-free-thread allocation stack, not only the known `+0x2a4a57` near-miss.
+Smoke `remote-results\remote-proof-20260709-094300` reached root-cause/payload release with this command installed; no exact reuse/write/marker and no same-thread allocation occurred in that single sample.
 
 The remote wrapper syncs and runs both static test files on the VM before proof attempts.
 
