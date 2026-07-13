@@ -4,6 +4,7 @@
 - Then add the equivalent inline JavaScript to the HTML when the email payload requires it.
 - Keep the HTML version behaviorally equivalent to the JavaScript version.
 - For `save/mail-sidebar/style.css`, keep only selectors whose class names are used by `save/mail-sidebar/index.html`; regenerate the filtered CSS automatically when the markup changes.
+- If JavaScript tooling packages become necessary, initialize and install them only in the repository root (`C:\Development\test\cve`). Keep them as development dependencies; email payloads must remain standalone HTML and vanilla JavaScript with no runtime libraries.
 
 ## Mail sidebar class inventory
 
