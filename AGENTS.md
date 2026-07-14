@@ -16,8 +16,8 @@ names when extending the sidebar:
 - Outlook controls: `o365button o365buttonLabel owaimg noMargin hidden flex`
 - Highlighting: `lvHighlightAllClass lvHighlightFromClass lvHighlightSubjectClass`
 - Triage controls: `__Microsoft_Owa_TriageShared_templates_cs_2 __Microsoft_Owa_TriageShared_templates_cs_3`
-- Icons: `ms-Icon--at ms-Icon--attachment ms-Icon--flag ms-Icon--mailUnread ms-Icon--pinDown ms-Icon--pinLeft ms-Icon--shield ms-Icon--thumbUp ms-Icon--trash`
-- Microsoft styling: `ms-bgc-ts ms-bg-color-white ms-border-color-neutralTertiaryAlt ms-fcl-np ms-fcl-ns-b ms-fcl-nt-b ms-fcl-tp ms-fcl-tp-b ms-font-color-neutralSecondary ms-font-l ms-font-m ms-font-s ms-font-weight-semilight ms-fwt-sb ms-fwt-sl ms-icon-font-size-14 ms-icon-font-size-16 ms-icon-font-size-17 ms-icon-tall-glyph`
+- Icons: `ms-Icon--at ms-Icon--attachment ms-Icon--check ms-Icon--flag ms-Icon--mailUnread ms-Icon--pinDown ms-Icon--pinLeft ms-Icon--shield ms-Icon--thumbUp ms-Icon--trash`
+- Microsoft styling: `ms-bgc-ts ms-bgc-w ms-bg-color-white ms-border-color-neutralSecondary-hover ms-border-color-neutralSecondaryAlt ms-border-color-neutralTertiaryAlt ms-fcl-np ms-fcl-ns-b ms-fcl-nsa-b ms-fcl-nt-b ms-fcl-tp ms-fcl-tp-b ms-font-color-neutralSecondary ms-font-l ms-font-m ms-font-s ms-font-weight-semilight ms-fwt-sb ms-fwt-sl ms-icon-font-size-14 ms-icon-font-size-16 ms-icon-font-size-17 ms-icon-tall-glyph`
 - Other existing classes: `checkboxImage csimg image-clear1x1-gif listItemDefaultBackground owa-color-neutral-green-alt owa-color-neutral-orange wf-size-checkboxMultiselectSize`
 
 ## CVE-2026-42897 email payload
@@ -46,3 +46,12 @@ names when extending the sidebar:
 - Triage hover actions must be icon-only buttons. Do not place visible text inside the icon spans.
 - Triage DOM order should be `pin`, `flag`, `read`, `delete`; because Outlook icons float right, this renders visually as delete, read, flag, pin.
 - When the fake mail is clicked, suspend the currently active real mail row so there is no double active highlight, but restore it before real mail click handlers run so real row selection remains stable.
+
+### Outlook reading pane selectors
+
+- The open message subject is `[autoid="_rp_4"].rpHighlightSubjectClass`.
+- The sender text is inside `.rpHighlightFromClass .bidi.allowTextSelection`.
+- The received time is inside `._rp_e8 span.allowTextSelection`.
+- The recipient well is `#ItemHeader.ToContainer`; the visible recipient text is `[autoid="_pe_b"]`.
+- The message body wrapper is `[id="Item.MessagePartBody"]`; the editable visible body content is `[id="Item.MessageUniqueBody"].rpHighlightBodyClass`.
+- When fake mail replaces reading pane content, snapshot the real pane first and restore it during fake mail deactivation before real mail click handlers run.
