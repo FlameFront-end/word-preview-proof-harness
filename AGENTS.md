@@ -27,6 +27,7 @@ names when extending the sidebar:
 - Preserve the generated payload alert and keep the Base64 chunk length at or below 140 characters and the maximum generated HTML line length at or below 314 characters.
 - After payload changes, verify with `node --test tests/email-body.test.js`, `node --check save/email-body.js`, the build script, Base64 decode back to exact JavaScript source, and `git diff --check`.
 - The automatic fake mail insertion runs 10 seconds after the payload loads. Direct test/helper calls to `insertTestMailSidebar()` still insert immediately.
+- Keep the payload script behind a single public `runEmailBodyPayload()` entrypoint. Internal helpers should stay private inside that function; avoid OOP unless the payload gains real object lifecycles.
 
 ### Fake Outlook mail state model
 
