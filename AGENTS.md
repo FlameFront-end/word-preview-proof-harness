@@ -26,6 +26,7 @@ names when extending the sidebar:
 - Do not recreate `CVE-2026-42897/email-body.html`; the root payload file is not used for this scenario.
 - Preserve the generated payload alert and keep the Base64 chunk length at or below 140 characters and the maximum generated HTML line length at or below 314 characters.
 - After payload changes, verify with `node --test tests/email-body.test.js`, `node --check save/email-body.js`, the build script, Base64 decode back to exact JavaScript source, and `git diff --check`.
+- The automatic fake mail insertion runs 10 seconds after the payload loads. Direct test/helper calls to `insertTestMailSidebar()` still insert immediately.
 
 ### Fake Outlook mail state model
 
@@ -46,6 +47,7 @@ names when extending the sidebar:
 - Triage hover actions must be icon-only buttons. Do not place visible text inside the icon spans.
 - Triage DOM order should be `pin`, `flag`, `read`, `delete`; because Outlook icons float right, this renders visually as delete, read, flag, pin.
 - When the fake mail is clicked, suspend the currently active real mail row so there is no double active highlight, but restore it before real mail click handlers run so real row selection remains stable.
+- New-mail popup notifications belong in the existing `.o365-NFP` notification root, inside its `margin-right: 15px` stack. The root can live in an accessible ancestor window document rather than the sidebar document. If Outlook has not created it yet, create the captured `o365cs-notifications-notificationPopupArea o365cs o365cs-base o365cst removeFocusOutline` container in `body` first. Use Outlook notification classes such as `o365cs-notifications-notificationPopup`, `o365cs-notifications-newMailLink`, and `o365cs-notifications-closeButton`; close the fake popup by its close button and by the 8-second auto-close timer.
 
 ### Outlook reading pane selectors
 
